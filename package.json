@@ -24,6 +24,8 @@
     "export:solved": "python3 scripts/solver/export_solved.py",
     "gen:dataset": "python3 scripts/solver/gen_solved_dataset.py",
     "gen:dataset-parallel": "python3 scripts/solver/parallel_gen.py",
+    "gen:facing": "python3 scripts/solver/gen_facing_dataset.py",
+    "gen:facing-parallel": "python3 scripts/solver/parallel_facing.py",
     "train:distill": "python3 scripts/solver/train_distill.py",
     "eval:generalization": "python3 scripts/solver/eval_generalization.py"
   },
