@@ -1,6 +1,25 @@
 # Texas GTO Lab
 
-A local Texas Hold'em strategy lab with an equity calculator, GTO-inspired mixed strategy engine, editable range matrix, and a real-time AI/multiplayer battle table.
+A Texas Hold'em strategy lab with an equity calculator, a mixed strategy engine, an editable range matrix, and a real-time AI/multiplayer battle table.
+
+**Live demo:** http://47.93.224.109:10086/
+
+## GTO solver track
+
+Beyond the heuristic engine, the project now has **exact CFR(+) solvers** for the
+river, turn, and flop with **measured exploitability** (the real distance-to-GTO
+metric). The solved strategies feed back into the product: on covered river spots
+the engine plays the exact equilibrium, dropping its exploitability from **28.7%
+to 0.14% of pot**. See [docs/GTO_SOLVER.md](docs/GTO_SOLVER.md) for the full
+methodology, results, and `npm run` commands (`test:solver`, `solve:gpu`,
+`measure:engine`, `export:solved`).
+
+## Deploy
+
+```bash
+scripts/deploy-wf.sh                      # wf@ubuntu preview (key auth)
+SSHPASS='...' scripts/deploy-shared.sh    # shared server :10086 (builds locally, ships dist)
+```
 
 ## Run
 
