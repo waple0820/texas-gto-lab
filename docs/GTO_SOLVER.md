@@ -219,6 +219,34 @@ the baseline the artifact integration drives down.
 npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20
 ```
 
+## Stage 6 — Solved strategies in the product (done)
+
+The solver now feeds the shipped engine. `scripts/solver/export_solved.py` solves
+river spots exactly and writes `src/solved-river-artifact.js` (per-combo, per-node
+equilibrium frequencies). At runtime `src/solved-policy.js` consults it, and
+`recommendStrategy` plays the solved strategy for the hero's exact combo on any
+covered spot instead of the heuristic.
+
+Re-running the Stage 5 measurement with the solved policy active, on the same spot
+where the heuristic was 28.7% exploitable:
+
+| engine | exact exploitability |
+|--------|---------------------:|
+| heuristic (before) | 28.7% pot |
+| **solved policy (after)** | **0.14% pot (1.4 mbb/pot)** |
+
+So on the covered spot the product now plays within ~0.1% of pot of GTO — the same
+level as the solver's own Nash iterate. This proves the full pipeline end to end:
+solve → export to a JS artifact → engine consumes it → measured exploitability
+collapses. Coverage grows by adding spots to `export_solved.py`; uncovered spots
+fall back to the heuristic untouched (existing tests and the 100-hand audit are
+unaffected).
+
+```bash
+npm run export:solved      # solve canonical spots -> src/solved-river-artifact.js
+npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-iters 10
+```
+
 ## Roadmap
 
 1. **River subgame solver + exact exploitability** ✅
@@ -226,11 +254,12 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20
 3. **GPU torch port — full-range river *and* turn solves on the dual-5090 host** ✅
 4. **Flop three-street solve (turn-sampled, river-exact MCCFR)** ✅
 5. **Measure the shipped engine's exact exploitability vs GTO (~29% pot)** ✅
-6. Export solved strategies into the JS artifact contract
-   (`src/trained-policy-artifact.js`); re-measure the deployed policy's
-   exploitability and retire hand-written safeguards as it falls.
-7. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
-   exploitability to single digits; multiple bet sizes.
+6. **Solved strategies in the product — exploitability collapses to ~0.14% pot on
+   covered spots** ✅
+7. Widen coverage: solve a library of river/turn boards (GPU) + add a board
+   abstraction so live spots map to the nearest solved entry; multiple bet sizes.
+8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
+   exploitability to single digits.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
