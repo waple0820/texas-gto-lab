@@ -295,6 +295,12 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    jam, to cap depth) and solves it via the existing CFR engine
    (`RiverSolver(..., tree=...)`). It converges to ~0.28% pot — the foundation for
    distilling facing decisions so the distilled policy can be turned on end to end.
+   `gen_facing_dataset.py` / `parallel_facing.py` then emit `(features, GTO facing
+   distribution [fold,call,raise-small,raise-big,jam])` rows (facing context:
+   `facing_bet=1`, `pot_odds` set). Combined with the open dataset, one network is
+   trained whose 5 outputs read as the open set when `facing_bet=0` and the facing
+   set when `facing_bet=1` — the context switch the runtime already uses. Mean GTO
+   facing defense ≈ fold 0.43 / call 0.44 / raises 0.13.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 
