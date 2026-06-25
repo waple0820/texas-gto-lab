@@ -27,7 +27,8 @@
     "gen:facing": "python3 scripts/solver/gen_facing_dataset.py",
     "gen:facing-parallel": "python3 scripts/solver/parallel_facing.py",
     "train:distill": "python3 scripts/solver/train_distill.py",
-    "eval:generalization": "python3 scripts/solver/eval_generalization.py"
+    "eval:generalization": "python3 scripts/solver/eval_generalization.py",
+    "eval:unified": "python3 scripts/solver/eval_unified.py"
   },
   "dependencies": {
     "lucide": "^1.21.0",

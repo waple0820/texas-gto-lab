@@ -301,6 +301,20 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    trained whose 5 outputs read as the open set when `facing_bet=0` and the facing
    set when `facing_bet=1` — the context switch the runtime already uses. Mean GTO
    facing defense ≈ fold 0.43 / call 0.44 / raises 0.13.
+
+   **Unified model `distill-river-v2`** is trained on the combined open + facing
+   data (302k rows, one network, 5 outputs read by `facing_bet`). It generalizes
+   on **both** decision types on held-out boards (`npm run eval:unified`):
+
+   | context | held-out TV from GTO | vs mean baseline |
+   |---------|---------------------:|-----------------:|
+   | open | 0.117 | 62% better |
+   | facing | 0.145 | 70% better |
+
+   `src/distilled-policy.js` now reproduces both the open and facing feature
+   formulas and serves the model for river open *and* facing nodes — still default
+   off (`globalThis.__ENABLE_DISTILL__`), pending audit reconciliation, but the
+   full open+facing policy is wired and ready.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 
