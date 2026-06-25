@@ -256,10 +256,15 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
 5. **Measure the shipped engine's exact exploitability vs GTO (~29% pot)** ✅
 6. **Solved strategies in the product — exploitability collapses to ~0.14% pot on
    covered spots** ✅
-7. Widen coverage: solve a library of river/turn boards (GPU) + add a board
-   abstraction so live spots map to the nearest solved entry; multiple bet sizes.
+7. **Generalize GTO via distillation (in progress).** Exact per-combo solved
+   tables don't transfer between boards, so `gen_solved_dataset.py` solves many
+   river boards (bet buckets aligned to the artifact's open action set) and emits
+   `(feature vector, GTO open distribution)` pairs in the same FEATURE_NAMES
+   contract as `trained-policy-runtime.js`. Next: train a network on this data so
+   the deployed policy plays near-GTO on *unseen* spots, then re-measure
+   exploitability. `npm run gen:dataset`.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
-   exploitability to single digits.
+   exploitability to single digits; multiple bet sizes for facing nodes.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
