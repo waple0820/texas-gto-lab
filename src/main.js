@@ -443,9 +443,10 @@ function renderRangeMatrix() {
       const frequency = formatCellFrequency(weight);
       const contribution = formatContribution(code, weight);
       const isPartial = weight > 0 && weight < 0.995;
+      const cellType = row === col ? "cell-pair" : row < col ? "cell-suited" : "cell-offsuit";
       rows.push(`
         <button
-          class="range-cell ${weight <= 0 ? "is-empty" : ""} ${isPartial ? "is-partial" : ""}"
+          class="range-cell ${cellType} ${weight <= 0 ? "is-empty" : ""} ${isPartial ? "is-partial" : ""}"
           data-code="${code}"
           style="--weight:${weight}"
           title="${code}: ${frequency}% frequency, ${combos} combos, ${contribution}% of all starting hands"

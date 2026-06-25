@@ -628,12 +628,35 @@ button:focus-visible {
   pointer-events: none;
 }
 
+/* Hand-class accents (classic poker grid): gold diagonal pairs, blue suited,
+   slate offsuit — visible at any weight so the matrix structure always reads. */
+.range-cell.cell-pair {
+  box-shadow: inset 3px 0 0 rgba(215, 168, 77, 0.85);
+}
+.range-cell.cell-suited {
+  box-shadow: inset 3px 0 0 rgba(95, 162, 222, 0.7);
+}
+.range-cell.cell-offsuit {
+  box-shadow: inset 3px 0 0 rgba(125, 137, 130, 0.55);
+}
+
+.range-cell.is-empty.cell-pair {
+  background: linear-gradient(180deg, rgba(215, 168, 77, 0.07), transparent), #111815;
+}
+.range-cell.is-empty.cell-suited {
+  background: linear-gradient(180deg, rgba(95, 162, 222, 0.06), transparent), #111815;
+}
+.range-cell.is-empty.cell-offsuit {
+  background: #0f1512;
+}
+
 .range-cell.is-empty {
   color: #6a766f;
 }
 
 .range-cell.is-partial {
-  border-color: rgba(215, 168, 77, 0.42);
+  outline: 1px solid rgba(215, 168, 77, 0.5);
+  outline-offset: -1px;
 }
 
 .range-cell > * {
