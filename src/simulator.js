@@ -180,6 +180,7 @@ export class HoldemSimulator {
       rangeWeights,
       iterations: this.profile.samples,
       rng: this.rng,
+      lineProfile: this.lineProfileForActor("ai", toCall),
     });
     this.lastRecommendation = recommendation;
 
@@ -216,6 +217,33 @@ export class HoldemSimulator {
     if (toCall > 0 && this.currentBet >= this.pot * 0.55) return "facing-bet";
     if (toCall > 0) return "facing-raise";
     return this.currentBet > 0 ? "single-raised" : "single-raised";
+  }
+
+  lineProfileForActor(actor, toCall) {
+    const streetOrder = ["flop", "turn", "river"];
+    const rank = streetOrder.indexOf(this.street);
+    if (rank < 0) return { weakProbe: false, currentBetFraction: 0, passiveScore: 0 };
+    const opponent = this.other(actor);
+    const opponentActions = this.actions.filter((action) => action.actor === opponent && streetOrder.includes(action.street));
+    const previous = opponentActions.filter((action) => streetOrder.indexOf(action.street) < rank);
+    const aggressive = (action) => ["bet", "raise", "allin"].includes(action?.type);
+    const previousAggression = previous.filter(aggressive);
+    const previousChecks = previous.filter((action) => action.type === "check").length;
+    const currentAggression = opponentActions.findLast((action) => action.street === this.street && aggressive(action));
+    const potBeforeCall = Math.max(1, this.pot - toCall);
+    const currentBetFraction = toCall > 0 ? toCall / potBeforeCall : 0;
+    const passiveScore = Math.max(
+      0,
+      Math.min(1, (previousAggression.length === 0 ? 0.38 : 0) + Math.min(0.42, previousChecks * 0.18) + (currentBetFraction > 0 && currentBetFraction <= 0.35 ? 0.2 : 0)),
+    );
+    return {
+      weakProbe: toCall > 0 && Boolean(currentAggression) && currentBetFraction <= 0.35 && previousAggression.length === 0 && (rank < 2 || previousChecks >= 1),
+      passiveOpponentLine: previousAggression.length === 0,
+      previousChecks,
+      previousAggression: previousAggression.length,
+      currentBetFraction: round(currentBetFraction, 3),
+      passiveScore,
+    };
   }
 
   applyAction(actor, type) {

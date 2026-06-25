@@ -151,6 +151,10 @@ const betFrequency = (recommendation) =>
   recommendation.actions
     .filter((action) => ["bet-small", "bet-mid", "bet-big", "bet-over", "raise", "raise-small", "raise-big", "jam"].includes(action.key))
     .reduce((sum, action) => sum + action.frequency, 0);
+const raiseFrequency = (recommendation) =>
+  recommendation.actions
+    .filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key))
+    .reduce((sum, action) => sum + action.frequency, 0);
 
 const dryBoardBlockerBluff = recommendStrategy({
   hero: ["Ah", "5c"],
@@ -203,10 +207,24 @@ const semiBluffRaise = recommendStrategy({
   rng: mulberry32(19),
 });
 assert.ok(
-  semiBluffRaise.actions
-    .filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key))
-    .reduce((sum, action) => sum + action.frequency, 0) > 0.18,
+  raiseFrequency(semiBluffRaise) > 0.18,
 );
+
+const weakLineRiverBluff = recommendStrategy({
+  hero: ["5c", "7h"],
+  board: ["6s", "9c", "Qs", "Jh", "Qc"],
+  position: "CO",
+  context: "facing-raise",
+  pot: 3.1,
+  toCall: 0.6,
+  stackBb: 98,
+  rangeWeights: buildRangeWeights({ style: "balanced", position: "CO", context: "facing-raise", tableSize: 6 }),
+  iterations: 700,
+  rng: mulberry32(2103),
+  lineProfile: { weakProbe: true, passiveOpponentLine: true, previousChecks: 2, previousAggression: 0, currentBetFraction: 0.24, passiveScore: 0.9 },
+});
+assert.ok(raiseFrequency(weakLineRiverBluff) > 0.14, `weak-line bluff raise ${raiseFrequency(weakLineRiverBluff)}`);
+assert.ok(weakLineRiverBluff.reasons.some((reason) => reason.includes("弱线小注")));
 
 const riverPolarSizing = recommendStrategy({
   hero: ["As", "Qs"],

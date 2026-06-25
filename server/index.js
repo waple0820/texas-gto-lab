@@ -50,6 +50,7 @@ const MIME = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
 };
+const POSTFLOP_STREETS = ["flop", "turn", "river"];
 
 let nextPlayerId = 1;
 let nextAiIndex = 1;
@@ -447,6 +448,46 @@ function toCallFor(player) {
   return round(Math.max(0, table.currentBet - player.streetBet), 1);
 }
 
+function streetRank(street) {
+  return POSTFLOP_STREETS.indexOf(street);
+}
+
+function isAggressiveAction(action) {
+  return ["bet", "raise", "allin"].includes(action?.type);
+}
+
+function lineProfileFor(player, toCall) {
+  const rank = streetRank(table.street);
+  if (rank < 0) {
+    return { weakProbe: false, currentBetFraction: 0, passiveScore: 0 };
+  }
+  const opponentActions = table.actions.filter((action) => action.actorId !== player.id && streetRank(action.street) >= 0);
+  const previous = opponentActions.filter((action) => streetRank(action.street) >= 0 && streetRank(action.street) < rank);
+  const previousAggression = previous.filter(isAggressiveAction);
+  const previousChecks = previous.filter((action) => action.type === "check").length;
+  const currentAggression = opponentActions.findLast((action) => action.street === table.street && isAggressiveAction(action));
+  const potBeforeCall = Math.max(BIG_BLIND, table.pot - toCall);
+  const currentBetFraction = toCall > 0 ? toCall / potBeforeCall : 0;
+  const passiveScore = Math.max(
+    0,
+    Math.min(1, (previousAggression.length === 0 ? 0.38 : 0) + Math.min(0.42, previousChecks * 0.18) + (currentBetFraction > 0 && currentBetFraction <= 0.35 ? 0.2 : 0)),
+  );
+  const weakProbe =
+    toCall > 0 &&
+    Boolean(currentAggression) &&
+    currentBetFraction <= 0.35 &&
+    previousAggression.length === 0 &&
+    (rank < 2 || previousChecks >= 1);
+  return {
+    weakProbe,
+    passiveOpponentLine: previousAggression.length === 0,
+    previousChecks,
+    previousAggression: previousAggression.length,
+    currentBetFraction: round(currentBetFraction, 3),
+    passiveScore,
+  };
+}
+
 function advanceTurnOrStreet(lastPlayer) {
   const contenders = activePlayers().filter((player) => !player.folded);
   if (contenders.length === 1) {
@@ -601,6 +642,7 @@ function buildReview(player, action) {
     sizingOptions: recommendation.sizing.options || [],
     pot: table.pot,
     toCall,
+    lineProfile: recommendation.lineProfile,
     mix: recommendation.actions.map((item) => ({
       label: item.label,
       key: item.key,
@@ -669,6 +711,7 @@ function recommendFor(player) {
     opponents: Math.max(1, activePlayers().filter((seat) => seat.id !== player.id && !seat.folded).length),
     rangeWeights,
     iterations: player.type === "ai" ? 420 : 700,
+    lineProfile: lineProfileFor(player, toCall),
   });
 }
 
