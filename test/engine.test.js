@@ -66,6 +66,8 @@ const recommendation = recommendStrategy({
 });
 assert.equal(Math.round(recommendation.actions.reduce((sum, action) => sum + action.frequency, 0) * 100), 100);
 assert.ok(recommendation.actions[0].frequency > 0.35);
+assert.ok(recommendation.sizing.options.some((option) => option.label === "2.2bb open"));
+assert.ok(recommendation.sizing.options.some((option) => option.label === "2.5bb open"));
 
 const bbCheckOption = recommendStrategy({
   hero: ["4c", "6d"],
@@ -82,6 +84,7 @@ assert.ok(bbCheckOption.actions.some((action) => action.key === "check"));
 assert.ok(!bbCheckOption.actions.some((action) => action.key === "fold"));
 assert.notEqual(bbCheckOption.actions[0].key, "fold");
 assert.match(bbCheckOption.sizing.label, /隔离|加注/);
+assert.ok(bbCheckOption.sizing.options.some((option) => option.label.includes("隔离")));
 
 const openOption = recommendStrategy({
   hero: ["4c", "6d"],
@@ -109,6 +112,36 @@ const flopCheckOption = recommendStrategy({
 });
 assert.ok(flopCheckOption.actions.some((action) => action.key === "check"));
 assert.ok(!flopCheckOption.actions.some((action) => action.key === "fold"));
+assert.ok(flopCheckOption.sizing.options.some((option) => option.label === "33% pot"));
+assert.ok(flopCheckOption.sizing.options.some((option) => option.label === "75% pot"));
+
+const riverPolarSizing = recommendStrategy({
+  hero: ["As", "Qs"],
+  board: ["Ks", "Js", "Ts", "2d", "7c"],
+  position: "BTN",
+  context: "single-raised",
+  pot: 12,
+  toCall: 0,
+  stackBb: 100,
+  iterations: 300,
+  rng: mulberry32(15),
+});
+assert.ok(riverPolarSizing.sizing.options.some((option) => option.label === "125% pot"));
+assert.ok(riverPolarSizing.sizing.options.some((option) => option.label === "150% pot"));
+
+const lowSprSizing = recommendStrategy({
+  hero: ["Ah", "Ad"],
+  board: ["Ac", "Kd", "7s"],
+  position: "SB",
+  context: "three-bet-pot",
+  pot: 36,
+  toCall: 0,
+  stackBb: 16,
+  iterations: 300,
+  rng: mulberry32(16),
+});
+assert.equal(lowSprSizing.sizing.label, "All-in / 低 SPR");
+assert.ok(lowSprSizing.sizing.options[0].recommended);
 
 const sim = new HoldemSimulator({ rng: mulberry32(7) });
 assert.equal(sim.heroHole.length, 2);

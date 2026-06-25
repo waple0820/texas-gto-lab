@@ -135,6 +135,7 @@ app.innerHTML = `
             </div>
             <div id="action-mix" class="action-mix empty-state">选择手牌并计算</div>
             <div class="metric-grid" id="metric-grid"></div>
+            <div class="sizing-tree" id="sizing-tree"></div>
             <div class="tag-row" id="reason-tags"></div>
             <div class="distribution" id="distribution"></div>
           </section>
@@ -560,6 +561,7 @@ function renderRecommendation(result) {
   ]
     .map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`)
     .join("");
+  renderSizingTree(result.sizing);
 
   $("#reason-tags").innerHTML = result.reasons.map((reason) => `<span>${reason}</span>`).join("");
   $("#distribution").innerHTML = result.equity.distribution
@@ -574,6 +576,33 @@ function renderRecommendation(result) {
       `,
     )
     .join("");
+}
+
+function renderSizingTree(sizing) {
+  const options = sizing?.options || [];
+  if (!options.length) {
+    $("#sizing-tree").innerHTML = "";
+    return;
+  }
+  $("#sizing-tree").innerHTML = `
+    <div class="subhead">
+      <strong>尺度树</strong>
+      <span>${escapeHtml(sizing.note || "")}</span>
+    </div>
+    <div class="size-grid">
+      ${options
+        .map(
+          (option) => `
+            <div class="size-chip ${option.recommended ? "is-primary" : ""}">
+              <strong>${escapeHtml(option.label)}</strong>
+              <span>${round(option.amount, 1)}bb</span>
+              <em>${escapeHtml(option.role || "")}</em>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function randomScenario() {
@@ -722,6 +751,7 @@ function captureHeroDecision(type) {
     equity: recommendation.equity.equity,
     potOdds: recommendation.metrics.potOdds,
     sizing: recommendation.sizing.label,
+    sizingOptions: recommendation.sizing.options || [],
     mix: recommendation.actions.map((action) => ({
       key: action.key,
       label: action.label,
@@ -857,6 +887,7 @@ function renderReview() {
             <span>Odds ${pct(item.potOdds, 0)}</span>
             <span>${item.sizing}</span>
           </div>
+          ${renderReviewSizes(item)}
           <div class="review-mix">
             ${item.mix
               .map(
@@ -877,6 +908,25 @@ function renderReview() {
       `,
     )
     .join("");
+}
+
+function renderReviewSizes(item) {
+  const options = item.sizingOptions || [];
+  if (!options.length) return "";
+  return `
+    <div class="review-sizes">
+      ${options
+        .slice(0, 5)
+        .map(
+          (option) => `
+            <span class="${option.recommended ? "is-primary" : ""}">
+              ${escapeHtml(option.label)} · ${round(option.amount, 1)}bb
+            </span>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function wsUrl() {
@@ -1209,6 +1259,7 @@ function renderMpReview(state) {
             <span>Odds ${pct(item.potOdds, 0)}</span>
             <span>${escapeHtml(item.sizing)}</span>
           </div>
+          ${renderReviewSizes(item)}
           <div class="review-mix">
             ${item.mix
               .map(

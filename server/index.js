@@ -570,6 +570,7 @@ function buildReview(player, action) {
     equity: recommendation.equity.equity,
     potOdds: recommendation.metrics.potOdds,
     sizing: recommendation.sizing.label,
+    sizingOptions: recommendation.sizing.options || [],
     pot: table.pot,
     toCall,
     mix: recommendation.actions.map((item) => ({
