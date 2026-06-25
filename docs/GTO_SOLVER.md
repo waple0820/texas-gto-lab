@@ -260,9 +260,12 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    tables don't transfer between boards, so `gen_solved_dataset.py` solves many
    river boards (bet buckets aligned to the artifact's open action set) and emits
    `(feature vector, GTO open distribution)` pairs in the same FEATURE_NAMES
-   contract as `trained-policy-runtime.js`. Next: train a network on this data so
-   the deployed policy plays near-GTO on *unseen* spots, then re-measure
-   exploitability. `npm run gen:dataset`.
+   contract as `trained-policy-runtime.js`. `train_distill.py` then behavior-clones
+   those exact-CFR targets into an MLP (`npm run train:distill`) — unlike the
+   self-play artifact, the targets are real equilibrium strategies. Exports a
+   `distill-open` artifact in the existing mlp-softmax contract. Next: train on the
+   full board library, wire it into the runtime for open nodes, and re-measure
+   exploitability on *held-out* boards. `npm run gen:dataset`.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 
