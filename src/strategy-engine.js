@@ -17,6 +17,8 @@ import {
 } from "./poker-core.js";
 import { PREFLOP_POLICY_VERSION, preflopStrategyActions } from "./preflop-policy.js";
 import { applyTrainedPolicy } from "./trained-policy-runtime.js";
+import { lookupSolvedActions } from "./solved-policy.js";
+import { solvedRiverArtifact } from "./solved-river-artifact.js";
 
 const POSITION_EDGE = {
   UTG: -0.05,
@@ -647,24 +649,36 @@ export function recommendStrategy({
     position,
     context,
   });
-  const actions = applyLinePressure(trained?.actions || heuristicActions, {
+  const blendedActions = applyLinePressure(trained?.actions || heuristicActions, {
     equity: equityResult.equity,
     metrics,
     profile,
     rangeModel,
     lineProfile,
   });
-  const policySource = trained
-    ? {
-        type: "trained",
-        version: trained.artifact.version,
-        artifactId: trained.artifact.artifactId,
-        blend: trained.artifact.blend,
-        validation: trained.artifact.validation,
-      }
-    : profile.street === "preflop"
-      ? { type: "preflop", version: PREFLOP_POLICY_VERSION }
-      : { type: "heuristic", version: "range-role-v1" };
+  // Exact-CFR solved strategy takes precedence on covered spots: the engine plays
+  // the equilibrium for this combo instead of the heuristic.
+  const solvedActions = lookupSolvedActions({
+    board,
+    position,
+    toCall: metrics.toCall,
+    pot: metrics.pot,
+    hero,
+  });
+  const actions = solvedActions || blendedActions;
+  const policySource = solvedActions
+    ? { type: "solved", version: solvedRiverArtifact.version }
+    : trained
+      ? {
+          type: "trained",
+          version: trained.artifact.version,
+          artifactId: trained.artifact.artifactId,
+          blend: trained.artifact.blend,
+          validation: trained.artifact.validation,
+        }
+      : profile.street === "preflop"
+        ? { type: "preflop", version: PREFLOP_POLICY_VERSION }
+        : { type: "heuristic", version: "range-role-v1" };
   const baseSizing = chooseSizing({
     board,
     metrics,
