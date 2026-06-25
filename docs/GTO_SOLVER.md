@@ -274,9 +274,19 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    | vs predict-the-mean baseline | **66.6% better** |
 
    So on unseen river spots the distilled policy is within ~10% TV of exact
-   equilibrium. Trained artifact: `src/distilled-policy-artifact.js`. Next: wire it
-   into the runtime for open nodes (with JS-side feature parity) and re-measure the
-   engine's exploitability on held-out boards. `npm run eval:generalization`.
+   equilibrium. Trained artifact: `src/distilled-policy-artifact.js`.
+
+   **Runtime integration (plumbing shipped, default OFF).** `src/distilled-policy.js`
+   reproduces the generator's feature formulas in JS and runs the MLP for river
+   open nodes; `recommendStrategy` will prefer it (after the exact solved table)
+   when activated via `globalThis.__ENABLE_DISTILL__`. It is **off by default**
+   for two reasons found while wiring it: (1) it currently covers only the river
+   **open** decision, so with it active a held-out multi-bet spot still measured
+   ~33% pot exploitable (facing nodes stay heuristic — the gain is bounded until
+   facing decisions are distilled too); (2) GTO checks many strong hands for
+   balance, which trips the per-hand "strong ⇒ bet" strategy audit. Activating it
+   waits on **facing-node distillation** + reconciling the audit with GTO-style
+   checking. `npm run eval:generalization`.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 
