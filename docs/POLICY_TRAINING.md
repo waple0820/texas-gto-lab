@@ -10,45 +10,48 @@ Texas GTO Lab keeps heavyweight training off the public 2G2C game server. The de
 npm run train:policy
 ```
 
-The current trainer is a postflop range-role and sizing policy distiller. It is not a full PioSolver-class no-limit tree solve. It trains a small neural policy over normalized features that already exist in the strategy engine:
+The current trainer is a simplified self-play regret trainer for postflop heads-up decisions. It deliberately does not use a hand-written `target_policy()` or direct probability labels. Instead it:
 
-- equity, pot odds, SPR
-- street, position, context
-- made-hand strength and draw strength
-- board texture
-- range advantage, blockers, range percentile, range coverage
+- samples abstract postflop decision states from the same normalized feature contract used by the app;
+- lets the current policy play both sides of a small betting tree;
+- computes counterfactual action values for `check/bet` or `fold/call/raise` choices;
+- updates cumulative regret with `previous predicted regret * regretDecay + action EV - current mixed-strategy EV`;
+- trains the same small MLP shape to predict the regret matrix;
+- converts predicted regrets to mixed action frequencies with regret matching at runtime.
 
-The exported policy is blended into the existing range-role strategy. If the artifact is missing, disabled, or fails standards, the app falls back to the heuristic range-role engine. Preflop uses a separate table-driven range policy in `src/preflop-policy.js`, so unopened pots are raise/fold instead of open-limp mixes.
+This is still not a full PioSolver-class no-limit solver. The game tree is intentionally abstract so it can train quickly and ship as a small browser/server artifact. The important change is that bluff and value frequencies are no longer labels from a hand-written formula; they come from self-play regret pressure inside the simplified tree.
+
+Preflop uses a separate table-driven range policy in `src/preflop-policy.js`, so unopened pots are raise/fold instead of open-limp mixes.
 
 Current committed artifact:
 
-- version: `postflop-size-aware-mlp-v2`
+- version: `postflop-selfplay-regret-v3`
+- policy kind: `regret-matching`
+- model type: `mlp-regret`
 - training host: dual RTX 5090 CUDA run
-- samples: `1200000`
-- validation samples: `220000`
-- epochs: `14`
-- hidden width: `128`
-- validation KL: `0.003003`
-- validation MAE: `0.009049`
-- exported size: about `188KB`
+- default self-play hands: `600000`
+- default reservoir size: `900000`
+- default rollout batch: `16384`
+- default hidden width: `96`
+- default regret decay: `0.58`
 
 ## Standards Gate
 
 The trainer refuses to export unless every gate passes:
 
-- validation KL <= `0.012`
-- validation MAE <= `0.028`
-- softmax normalization error <= `1e-5`
-- dry high-card blocker bluff total bet frequency >= `42%`
-- wet connected low-air check frequency >= `50%`
-- wet connected low-air total bet frequency <= `50%`
-- flush-draw versus bet raise frequency >= `18%`
-- flush-draw versus bet fold frequency <= `20%`
-- value hand total bet frequency >= `62%`
-- value hand big-bet plus overbet frequency >= `14%`
-- river nut hand overbet frequency >= `18%`
+- regret MSE <= `0.085`
+- regret MAE <= `0.22`
+- average positive regret <= `1.35`
+- regret-matching normalization error <= `1e-5`
+- dry high-card blocker bluff total bet frequency >= `34%`
+- wet connected low-air check frequency >= `42%`
+- wet connected low-air total bet frequency <= `58%`
+- flush-draw versus bet raise frequency >= `16%`
+- flush-draw versus bet fold frequency <= `28%`
+- value hand total bet frequency >= `56%`
+- river nut hand overbet frequency >= `10%`
 
-These gates are intentionally behavior-focused. They protect the specific failure mode that made the AI too conservative: weak or blocker-heavy hands never finding bluff/semi-bluff frequencies.
+These gates are behavior-focused. They protect the specific failure mode that made the AI too conservative: weak blocker and semi-bluff hands never finding betting or raising frequency. They are not a proof of Nash convergence.
 
 ## 5090 Training Host
 
@@ -60,14 +63,18 @@ python3 -m venv .venv-policy
 . .venv-policy/bin/activate
 python -m pip install --upgrade pip
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
-npm run train:policy -- --device cuda --samples 1200000 --validation-samples 220000 --epochs 14 --batch-size 8192 --hidden 128
+npm run train:policy -- --device cuda --self-play-hands 1800000 --reservoir-size 1800000 --rollout-batch 32768 --train-steps-per-iter 32 --validation-samples 120000 --batch-size 8192 --hidden 128 --regret-decay 0.58
 ```
 
 The script uses `torch.nn.DataParallel` when multiple CUDA devices are visible. The resulting artifact is small enough to commit and deploy with the web app.
 
-## Future Upgrade Path
+## Artifact Contract
 
-The runtime interface is intentionally artifact-based. A later CFR or Deep CFR system can replace the current distillation target as long as it exports the same feature/action contract:
+The runtime interface is artifact-based:
 
 - no-call action set: `check`, `bet-small`, `bet-mid`, `bet-big`, `bet-over`
 - facing-bet action set: `fold`, `call`, `raise-small`, `raise-big`, `jam`
+- `model.type = "mlp-regret"` means the final MLP outputs are regrets, not logits
+- `policyKind = "regret-matching"` means runtime strategy is `positive_regret / sum(positive_regret)`
+
+Older `mlp-softmax` artifacts still load through the softmax path for compatibility.

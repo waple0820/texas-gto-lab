@@ -93,6 +93,13 @@ function softmax(logits) {
   return exps.map((value) => value / total);
 }
 
+function regretMatch(regrets) {
+  const positive = regrets.map((value) => Math.max(0, value));
+  const total = positive.reduce((sum, value) => sum + value, 0);
+  if (total <= 1e-8) return regrets.map(() => 1 / regrets.length);
+  return positive.map((value) => value / total);
+}
+
 function normalize(actions) {
   const total = actions.reduce((sum, action) => sum + Math.max(0, action.weight), 0) || 1;
   return actions
@@ -111,6 +118,9 @@ function runModel(features) {
   model.layers.forEach((layer, index) => {
     values = dense(values, layer, index < model.layers.length - 1);
   });
+  if (trainedPolicyArtifact.policyKind === "regret-matching" || model.type === "mlp-regret") {
+    return regretMatch(values);
+  }
   return softmax(values);
 }
 

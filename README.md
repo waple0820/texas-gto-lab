@@ -49,4 +49,4 @@ npm run build
 
 ## Notes
 
-The engine uses `pokersolver` for 5-7 card hand evaluation and Monte Carlo sampling for equity. The strategy layer uses a table-driven preflop policy plus a compact trained postflop size-aware artifact for practical mixed frequencies from equity, pot odds, SPR, draw texture, range pressure, position, and sizing buckets. It is still not a full no-limit solver; the runtime is designed so real solver exports or a backend CFR solver can replace the current artifact contract later.
+The engine uses `pokersolver` for 5-7 card hand evaluation and Monte Carlo sampling for equity. The strategy layer uses a table-driven preflop policy plus a compact self-play regret postflop artifact for practical mixed frequencies from equity, pot odds, SPR, draw texture, range pressure, position, and sizing buckets. It is still not a full no-limit solver; the runtime is designed so deeper CFR/solver exports can replace the current artifact contract later.
