@@ -67,15 +67,54 @@ npm run test:solver
 Asserts CFR+ drives exploitability below 0.6% of pot on fixed boards. This is the
 convergence guard for the solver and runs as part of local validation.
 
+## Stage 2 — Turn → river two-street solve (done)
+
+`scripts/solver/turn_cfr.py` extends the solver to a genuine **two-street** game.
+
+- Turn betting plays out; when action continues without a fold (check/check or
+  bet/call) a real **river chance node** deals every possible river card and a
+  full **river betting subgame** is solved for each.
+- Turn all-ins are run out with the exact 2-card runout equity (average over all
+  rivers), so no Monte Carlo anywhere.
+- The river chance is normalized rigorously: from a player's own perspective the
+  river is uniform over the 46 cards unseen to that player (52 − 4 turn board − 2
+  own), with per-river-card blocker masks so impossible holdings never count.
+- Exploitability is again **exact**, now computed over the whole two-street tree
+  including the chance node.
+
+### Run
+
+```bash
+npm run solve:turn -- --board "Kh 9d 4s 2c" --pot 10 --stack 15 \
+  --turn-bets 0.75 --river-bets 0.75 --iterations 400 --max-combos 160
+```
+
+Observed convergence (120-combo validation range, ~8s for 300 iters):
+
+| iters | exploitability |
+|------:|---------------:|
+|     1 |       82.95% pot |
+|   100 |        5.56% pot |
+|   300 |        1.90% pot |
+
+Same 1/√T decay as the river — a correct equilibrium for the two-street game.
+`--max-combos` caps the range for fast local validation; full-range and
+multi-board solves run on the dual-5090 host.
+
+### Validation
+
+`npm run test:solver` now runs **both** the river and turn convergence guards.
+
 ## Roadmap
 
 1. **River subgame solver + exact exploitability** ✅
-2. Turn & flop chance nodes, multiple bet sizes, full postflop tree; large solves
-   on the dual-5090 host.
-3. Card/preflop abstraction; export solved strategies into the JS artifact
+2. **Turn → river two-street solve (chance node + river subgames)** ✅
+3. Flop street (turn chance node), multiple bet sizes, full postflop tree; large
+   solves on the dual-5090 host.
+4. Card/preflop abstraction; export solved strategies into the JS artifact
    contract (`src/trained-policy-artifact.js`) and retire hand-written safeguards
    as the solved policy becomes trustworthy.
-4. End-to-end exploitability measurement of the deployed policy.
+5. End-to-end exploitability measurement of the deployed policy.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
