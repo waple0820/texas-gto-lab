@@ -1,18 +1,18 @@
 import { clamp, RANK_VALUE, cardRank } from "./poker-core.js";
 import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
 
-// Runtime consumer for the GTO-distilled open policy. The network was trained on
-// features computed by scripts/solver/gen_solved_dataset.py:build_features, so
-// this file reproduces those exact formulas from the engine's quantities to keep
-// feature parity. It applies only to river OPEN (no-call) decisions; everywhere
-// else the engine falls back to the solved table / trained / heuristic policy.
+// Runtime consumer for the GTO-distilled policy (unified open + facing model,
+// distill-river-v2). The network was trained on features computed by
+// gen_solved_dataset.build_features (open) and gen_facing_dataset.facing_features
+// (facing); this file reproduces those exact formulas from the engine's
+// quantities to keep feature parity. It applies to river decisions: OPEN (no
+// call) and FACING (a bet). Everywhere else the engine falls back to the solved
+// table / trained / heuristic policy.
 //
-// DEFAULT OFF: the distilled policy currently covers only river OPEN decisions,
-// so enabling it alone leaves facing nodes heuristic (bounded benefit) and shifts
-// the behavioral audit. The plumbing ships ready; activate with
-// globalThis.__ENABLE_DISTILL__ = true once facing-node distillation lands and the
-// audit is reconciled with GTO-style checking. The exploitability harness flips
-// this on via ENABLE_DISTILL=1.
+// DEFAULT OFF: enabling shifts the per-hand behavioral audit (GTO checks many
+// strong hands for balance). The plumbing ships ready; activate with
+// globalThis.__ENABLE_DISTILL__ = true once the audit is reconciled with
+// GTO-style checking. The exploitability harness flips this on via ENABLE_DISTILL=1.
 
 const MADE_HAND_WEIGHT = {
   Preflop: 0, "High Card": 0, Pair: 0.12, "Two Pair": 0.32, "Three of a Kind": 0.48,
@@ -27,6 +27,11 @@ const ACTION_LABELS = {
   "bet-mid": { key: "bet-mid", label: "中注", tone: "accent" },
   "bet-big": { key: "bet-big", label: "大注", tone: "strong" },
   "bet-over": { key: "bet-over", label: "超池", tone: "strong" },
+  fold: { key: "fold", label: "弃牌", tone: "danger" },
+  call: { key: "call", label: "跟注", tone: "neutral" },
+  "raise-small": { key: "raise-small", label: "小加注", tone: "accent" },
+  "raise-big": { key: "raise-big", label: "大加注", tone: "strong" },
+  jam: { key: "jam", label: "全压", tone: "strong" },
 };
 
 function histogramMean(hist) {
@@ -51,15 +56,17 @@ function normalizeHistogram(equityHistogram, equity) {
 }
 
 // Builds the 33-d feature vector in the artifact's featureNames order, matching
-// gen_solved_dataset.build_features (river open, context_aggressor=1, free_check=1).
-function buildFeatures({ hero, equity, hist, profile, metrics, position }) {
+// gen_solved_dataset.build_features (open) / gen_facing_dataset.facing_features
+// (facing). `facing` flips context_aggressor/free_check/facing_bet/to_call_flag
+// and the +0.05 aggressor term in range_advantage.
+function buildFeatures({ hero, equity, hist, profile, metrics, position, facing }) {
   const texture = profile.texture || {};
   const wet = clamp(texture.wetness || 0, 0, 1);
   const paired = texture.paired ? 1 : 0;
   const monotone = texture.monotone ? 1 : 0;
   const connected = texture.connected ? 1 : 0;
   const histMean = histogramMean(hist);
-  const advantage = clamp(0.5 + (histMean - 0.5) * 0.72 + 0.05 - wet * 0.045, 0.18, 0.82);
+  const advantage = clamp(0.5 + (histMean - 0.5) * 0.72 + (facing ? 0 : 0.05) - wet * 0.045, 0.18, 0.82);
   const cov = clamp(0.22 + histogramStd(hist) * 1.6 + (1 - wet) * 0.22, 0.08, 1);
   const spr = clamp((metrics.spr || 0) / 20, 0, 1);
   const made = clamp(MADE_HAND_WEIGHT[profile.madeName] || 0, 0, 1);
@@ -81,8 +88,13 @@ function buildFeatures({ hero, equity, hist, profile, metrics, position }) {
     wetness: wet, paired, monotone, connected,
     range_advantage: advantage, blockers, range_percentile: percentile,
     range_weight: rangeWeight, range_coverage: cov,
-    context_aggressor: 1, three_bet: 0, facing_bet: 0, free_check: 1,
+    context_aggressor: facing ? 0 : 1, three_bet: 0,
+    facing_bet: facing ? 1 : 0, free_check: facing ? 0 : 1,
   };
+  if (facing) {
+    f.pot_odds = clamp(metrics.potOdds || 0, 0, 0.75);
+    f.to_call_flag = 1;
+  }
   hist.forEach((v, i) => {
     f[`range_eq_${i * 10}_${i * 10 + 10}`] = v;
   });
@@ -107,18 +119,24 @@ function forward(values) {
   return exps.map((x) => x / total);
 }
 
-export function distilledOpenActions({ hero, board, equity, equityHistogram, profile, metrics, position }) {
+// Unified distilled policy for river decisions: open (no call) and facing (a
+// bet). The 5 model outputs are read as the open set when facing_bet=0 and the
+// facing set when facing_bet=1 — the same context switch used in training.
+export function distilledActions({ hero, board, equity, equityHistogram, profile, metrics, position }) {
   if (!globalThis.__ENABLE_DISTILL__) return null; // default off (see header)
   if (!distilledPolicyArtifact.enabled || !distilledPolicyArtifact.passed) return null;
   if (!board || board.length !== 5 || profile.street !== "river") return null;
   if (!hero || hero.length !== 2) return null;
-  if ((metrics.toCall || 0) > 0) return null; // open (no-call) decisions only
 
+  const facing = (metrics.toCall || 0) > 0;
   const hist = normalizeHistogram(equityHistogram, equity);
-  const probs = forward(buildFeatures({ hero, equity, hist, profile, metrics, position }));
-  const keys = distilledPolicyArtifact.actionSets.open;
+  const probs = forward(buildFeatures({ hero, equity, hist, profile, metrics, position, facing }));
+  const keys = facing ? distilledPolicyArtifact.actionSets.facing : distilledPolicyArtifact.actionSets.open;
   if (probs.length !== keys.length) return null;
   return keys
     .map((key, i) => ({ ...(ACTION_LABELS[key] || { key, label: key, tone: "neutral" }), frequency: probs[i] }))
     .sort((a, b) => b.frequency - a.frequency);
 }
+
+// Back-compat alias.
+export const distilledOpenActions = distilledActions;
