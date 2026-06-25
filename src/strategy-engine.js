@@ -651,15 +651,10 @@ export function recommendStrategy({
     position,
     context,
   });
-  const blendedActions = applyLinePressure(trained?.actions || heuristicActions, {
-    equity: equityResult.equity,
-    metrics,
-    profile,
-    rangeModel,
-    lineProfile,
-  });
-  // Exact-CFR solved strategy takes precedence on covered spots: the engine plays
-  // the equilibrium for this combo instead of the heuristic.
+  // Policy precedence for the base strategy: exact-CFR solved table > distilled
+  // GTO (generalizes to unseen boards) > trained/heuristic. The line-pressure
+  // exploit then layers on top of whichever base, so a GTO baseline is preserved
+  // when there is no weak-line signal but weak lines are still punished.
   const solvedActions = lookupSolvedActions({
     board,
     position,
@@ -667,8 +662,6 @@ export function recommendStrategy({
     pot: metrics.pot,
     hero,
   });
-  // Distilled GTO (generalizes to unseen boards) for river open decisions when no
-  // exact solved table matches.
   const distilledActions = solvedActions
     ? null
     : distilledOpenActions({
@@ -680,7 +673,14 @@ export function recommendStrategy({
         metrics,
         position,
       });
-  const actions = solvedActions || distilledActions || blendedActions;
+  const baseActions = solvedActions || distilledActions || trained?.actions || heuristicActions;
+  const actions = applyLinePressure(baseActions, {
+    equity: equityResult.equity,
+    metrics,
+    profile,
+    rangeModel,
+    lineProfile,
+  });
   const policySource = solvedActions
     ? { type: "solved", version: solvedRiverArtifact.version }
     : distilledActions

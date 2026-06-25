@@ -9,10 +9,10 @@ import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
 // call) and FACING (a bet). Everywhere else the engine falls back to the solved
 // table / trained / heuristic policy.
 //
-// DEFAULT OFF: enabling shifts the per-hand behavioral audit (GTO checks many
-// strong hands for balance). The plumbing ships ready; activate with
-// globalThis.__ENABLE_DISTILL__ = true once the audit is reconciled with
-// GTO-style checking. The exploitability harness flips this on via ENABLE_DISTILL=1.
+// DEFAULT ON: an A/B exploitability test on a held-out board cut the engine from
+// 29.7% to 9.0% of pot with this policy active (3.3x closer to GTO), so it plays
+// the distilled equilibrium for river open/facing on uncovered spots. Disable for
+// comparison with globalThis.__ENABLE_DISTILL__ = false (harness: DISABLE_DISTILL=1).
 
 const MADE_HAND_WEIGHT = {
   Preflop: 0, "High Card": 0, Pair: 0.12, "Two Pair": 0.32, "Three of a Kind": 0.48,
@@ -123,7 +123,7 @@ function forward(values) {
 // bet). The 5 model outputs are read as the open set when facing_bet=0 and the
 // facing set when facing_bet=1 — the same context switch used in training.
 export function distilledActions({ hero, board, equity, equityHistogram, profile, metrics, position }) {
-  if (!globalThis.__ENABLE_DISTILL__) return null; // default off (see header)
+  if (globalThis.__ENABLE_DISTILL__ === false) return null; // default on (see header)
   if (!distilledPolicyArtifact.enabled || !distilledPolicyArtifact.passed) return null;
   if (!board || board.length !== 5 || profile.street !== "river") return null;
   if (!hero || hero.length !== 2) return null;
