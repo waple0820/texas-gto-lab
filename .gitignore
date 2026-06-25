@@ -4,3 +4,4 @@ dist/
 npm-debug.log*
 .dev-server.log
 .dev-server.pid
+artifacts/
