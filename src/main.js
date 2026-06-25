@@ -133,6 +133,7 @@ app.innerHTML = `
               <h2>建议</h2>
               <span id="sample-count">Ready</span>
             </div>
+            <div class="policy-source-row" id="policy-source-row" hidden></div>
             <div id="action-mix" class="action-mix empty-state">选择手牌并计算</div>
             <div class="metric-grid" id="metric-grid"></div>
             <div class="sizing-tree" id="sizing-tree"></div>
@@ -539,8 +540,26 @@ async function runCalculation() {
   }
 }
 
+const POLICY_BADGES = {
+  solved: { label: "GTO 精确解", note: "CFR 求解的均衡策略", kind: "gto" },
+  distilled: { label: "GTO 泛化", note: "蒸馏 GTO 神经网络", kind: "gto" },
+  preflop: { label: "翻前范围表", note: "位置范围表策略", kind: "info" },
+  trained: { label: "训练策略", note: "自博弈训练策略", kind: "info" },
+  heuristic: { label: "启发式", note: "范围角色启发式", kind: "muted" },
+};
+
+function renderPolicySource(policySource) {
+  const row = $("#policy-source-row");
+  const badge = POLICY_BADGES[policySource?.type] || POLICY_BADGES.heuristic;
+  row.hidden = false;
+  row.className = `policy-source-row ${badge.kind}`;
+  const version = policySource?.version ? ` · ${policySource.version}` : "";
+  row.innerHTML = `<span class="policy-badge">${badge.label}</span><span class="policy-note">${badge.note}${version}</span>`;
+}
+
 function renderRecommendation(result) {
   $("#sample-count").textContent = `${result.equity.iterations} samples`;
+  renderPolicySource(result.policySource);
   $("#action-mix").classList.remove("empty-state");
   $("#action-mix").innerHTML = result.actions
     .map(

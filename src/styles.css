@@ -592,6 +592,53 @@ button:focus-visible {
   font-size: 13px;
 }
 
+.policy-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.policy-source-row[hidden] {
+  display: none;
+}
+
+.policy-badge {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.policy-source-row.gto .policy-badge {
+  border-color: rgba(67, 184, 131, 0.55);
+  background: rgba(67, 184, 131, 0.18);
+  color: #9ef0c6;
+  box-shadow: 0 0 14px rgba(67, 184, 131, 0.2);
+}
+.policy-source-row.info .policy-badge {
+  border-color: rgba(95, 162, 222, 0.5);
+  background: rgba(95, 162, 222, 0.16);
+  color: #bcd9f5;
+}
+.policy-source-row.muted .policy-badge {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+.policy-note {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .range-matrix {
   display: grid;
   grid-template-columns: repeat(13, minmax(48px, 1fr));
