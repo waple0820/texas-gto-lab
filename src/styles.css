@@ -456,6 +456,54 @@ button:focus-visible {
   font-size: 16px;
 }
 
+.sizing-tree {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sizing-tree:empty {
+  display: none;
+}
+
+.size-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.size-chip {
+  display: grid;
+  gap: 5px;
+  min-height: 78px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #111815;
+}
+
+.size-chip.is-primary {
+  border-color: rgba(67, 184, 131, 0.62);
+  background: rgba(67, 184, 131, 0.1);
+}
+
+.size-chip strong {
+  font-size: 13px;
+}
+
+.size-chip span {
+  color: var(--green-2);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.size-chip em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -1554,6 +1602,29 @@ button:focus-visible {
   gap: 6px;
 }
 
+.review-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.review-sizes span {
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 21px;
+}
+
+.review-sizes span.is-primary {
+  border-color: rgba(67, 184, 131, 0.52);
+  background: rgba(67, 184, 131, 0.12);
+  color: #a6e8c8;
+}
+
 .review-mix div {
   position: relative;
   display: grid;
@@ -1687,6 +1758,10 @@ button:focus-visible {
 
   .range-summary {
     grid-template-columns: 1fr;
+  }
+
+  .size-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .range-code {

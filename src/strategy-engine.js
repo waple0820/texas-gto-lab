@@ -60,53 +60,131 @@ function hasFreeCheckOption(context) {
   return ["check-option", "limped-pot", "blind-check"].includes(context);
 }
 
-function chooseSizing({ board, metrics, profile, equity, toCall, context }) {
+function sizeOption(label, amount, role, frequency = null) {
+  return {
+    label,
+    amount: round(Math.max(0, amount), 1),
+    role,
+    frequency,
+  };
+}
+
+function potSize(label, fraction, pot, role, frequency = null) {
+  return {
+    ...sizeOption(label, pot * fraction, role, frequency),
+    fraction,
+  };
+}
+
+function makeSizing(primary, note, options) {
+  const seen = new Set();
+  const uniqueOptions = [primary, ...options].filter((option) => {
+    const key = option.label;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return {
+    label: primary.label,
+    amount: primary.amount,
+    note,
+    options: uniqueOptions.map((option) => ({
+      ...option,
+      recommended: option.label === primary.label,
+    })),
+  };
+}
+
+function preflopOpenPrimary(position, stackBb) {
+  if (stackBb < 35) return sizeOption("2.0bb open", 2, "短筹码低风险开池", 0.3);
+  if (position === "SB") return sizeOption("3.0bb SB open", 3, "盲战 OOP 提高弃牌率", 0.34);
+  if (position === "BTN" || position === "CO") return sizeOption("2.2bb open", 2.2, "后位高频小开", 0.32);
+  return sizeOption("2.5bb open", 2.5, "标准开池", 0.34);
+}
+
+function commonPostflopSizes(pot, spr, boardCards) {
+  const options = [
+    potSize("25% pot", 0.25, pot, "range bet / deny equity", 0.18),
+    potSize("33% pot", 0.33, pot, "高频小注", 0.22),
+    potSize("50% pot", 0.5, pot, "中等混合尺度", 0.2),
+    potSize("66% pot", 0.66, pot, "保护与价值", 0.16),
+    potSize("75% pot", 0.75, pot, "湿润面压力", 0.14),
+    potSize("100% pot", 1, pot, "极化下注", 0.08),
+  ];
+  if (boardCards >= 4 && spr >= 3.2) {
+    options.push(potSize("125% pot", 1.25, pot, "转河极化 overbet", 0.05));
+  }
+  if (boardCards >= 4 && spr >= 4.5) {
+    options.push(potSize("150% pot", 1.5, pot, "坚果优势超池", 0.03));
+  }
+  return options;
+}
+
+function chooseSizing({ board, metrics, profile, equity, toCall, context, position }) {
   const wetness = profile.texture.wetness || 0;
   const spr = metrics.spr;
   const valueHeavy = equity > 0.66 || (MADE_HAND_WEIGHT[profile.madeName] || 0) > 0.48;
+  const nutted = (MADE_HAND_WEIGHT[profile.madeName] || 0) > 0.62;
 
   if (spr < 2.1 || metrics.effectiveStack <= 18) {
-    return {
-      label: "All-in / 低 SPR",
-      amount: metrics.effectiveStack,
-      note: "短 SPR 下权益实现优先",
-    };
+    return makeSizing(sizeOption("All-in / 低 SPR", metrics.effectiveStack, "短 SPR 直接实现权益", 0.62), "短 SPR 下权益实现优先", [
+      potSize("33% pot", 0.33, metrics.pot, "保留弱范围"),
+      potSize("66% pot", 0.66, metrics.pot, "承诺底池"),
+    ]);
   }
   if (board.length === 0) {
     if (toCall <= 0 && hasFreeCheckOption(context)) {
-      const isolationSize = Math.max(3, metrics.pot * 1.8);
-      return {
-        label: "隔离加注",
-        amount: round(isolationSize, 1),
-        note: "免费看牌时不能弃牌，只在过牌与加注间混合",
-      };
+      const primary = sizeOption("4.0bb 隔离加注", Math.max(4, metrics.pot * 1.8), "隔离 limper", 0.34);
+      return makeSizing(primary, "免费看牌时不能弃牌，主动入池使用隔离加注树", [
+        sizeOption("3.5bb 小隔离", Math.max(3.5, metrics.pot * 1.55), "低风险隔离", 0.22),
+        sizeOption("4.5bb 标准隔离", Math.max(4.5, metrics.pot * 2.05), "标准隔离", 0.26),
+        sizeOption("6.0bb 大隔离", Math.max(6, metrics.pot * 2.7), "多 limper / OOP 压力", 0.1),
+      ]);
     }
-    const openSize = toCall > 0 ? Math.max(toCall * 3, 6) : 2.5;
-    return {
-      label: toCall > 0 ? "3x 加注" : "2.5bb open",
-      amount: round(openSize, 1),
-      note: "翻前标准尺度",
-    };
+    if (toCall > 0 && context === "facing-3bet") {
+      const primary = sizeOption("2.2x 4bet", Math.max(toCall * 2.2, 16), "常规 4bet", 0.38);
+      return makeSizing(primary, "面对 3bet 使用小 4bet / jam 混合", [
+        sizeOption("2.0x 4bet", Math.max(toCall * 2, 14), "IP 小 4bet", 0.22),
+        sizeOption("2.5x 4bet", Math.max(toCall * 2.5, 18), "OOP 压力 4bet", 0.24),
+        sizeOption("All-in", metrics.effectiveStack, "低 SPR / 强极化", 0.16),
+      ]);
+    }
+    if (toCall > 0) {
+      const outOfPosition = position === "SB" || position === "BB";
+      const primary = sizeOption(outOfPosition ? "4x 3bet" : "3x 3bet", Math.max(toCall * (outOfPosition ? 4 : 3), outOfPosition ? 8 : 6), outOfPosition ? "OOP 3bet" : "IP 3bet", 0.36);
+      return makeSizing(primary, "面对 open 使用 IP 小 3bet、OOP 大 3bet、squeeze 加大", [
+        sizeOption("3x 3bet", Math.max(toCall * 3, 6), "IP 标准"),
+        sizeOption("4x 3bet", Math.max(toCall * 4, 8), "OOP 标准"),
+        sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "多人底池挤压"),
+      ]);
+    }
+    const primary = preflopOpenPrimary(position, metrics.effectiveStack);
+    return makeSizing(primary, "翻前 open 常见尺度树", [
+      sizeOption("2.0bb open", 2, "短筹码 / 后位高频", 0.18),
+      sizeOption("2.2bb open", 2.2, "后位常规", 0.24),
+      sizeOption("2.5bb open", 2.5, "中早位标准", 0.28),
+      sizeOption("3.0bb open", 3, "SB / 低级别惩罚", 0.18),
+    ]);
+  }
+  const postflopOptions = commonPostflopSizes(metrics.pot, spr, board.length);
+  if (board.length === 5 && (valueHeavy || nutted) && spr >= 3) {
+    const primary = equity > 0.72 || nutted ? postflopOptions.find((option) => option.label === "125% pot") : postflopOptions.find((option) => option.label === "100% pot");
+    return makeSizing(primary || postflopOptions.at(-1), "河牌极化范围加入 pot / overbet 尺度", postflopOptions);
+  }
+  if (board.length >= 4 && wetness > 0.42 && valueHeavy) {
+    const primary = postflopOptions.find((option) => option.label === "100% pot") || postflopOptions.find((option) => option.label === "75% pot");
+    return makeSizing(primary, "转河湿润面价值与保护，使用大注到 pot", postflopOptions);
   }
   if (valueHeavy && wetness > 0.45) {
-    return {
-      label: "75% pot",
-      amount: round(metrics.pot * 0.75, 1),
-      note: "湿润面价值与保护",
-    };
+    const primary = postflopOptions.find((option) => option.label === "75% pot");
+    return makeSizing(primary, "湿润面价值与保护", postflopOptions);
   }
   if (valueHeavy && wetness < 0.22) {
-    return {
-      label: "33% pot",
-      amount: round(metrics.pot * 0.33, 1),
-      note: "静态面高频小注",
-    };
+    const primary = postflopOptions.find((option) => option.label === "33% pot");
+    return makeSizing(primary, "静态面高频小注", postflopOptions);
   }
-  return {
-    label: wetness > 0.4 ? "66% pot" : "50% pot",
-    amount: round(metrics.pot * (wetness > 0.4 ? 0.66 : 0.5), 1),
-    note: "混合尺度",
-  };
+  const primary = postflopOptions.find((option) => option.label === (wetness > 0.4 ? "66% pot" : "50% pot"));
+  return makeSizing(primary, "常规混合尺度，保留小注、中注、大注和极化 overbet", postflopOptions);
 }
 
 function strategyFacingBet({ equity, metrics, profile, position, context }) {
@@ -257,6 +335,7 @@ export function recommendStrategy({
     equity: equityResult.equity,
     toCall: metrics.toCall,
     context,
+    position,
   });
   const rangeInfo = rangeCoverage(activeRange);
 
