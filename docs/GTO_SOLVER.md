@@ -256,16 +256,27 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
 5. **Measure the shipped engine's exact exploitability vs GTO (~29% pot)** ✅
 6. **Solved strategies in the product — exploitability collapses to ~0.14% pot on
    covered spots** ✅
-7. **Generalize GTO via distillation (in progress).** Exact per-combo solved
-   tables don't transfer between boards, so `gen_solved_dataset.py` solves many
-   river boards (bet buckets aligned to the artifact's open action set) and emits
-   `(feature vector, GTO open distribution)` pairs in the same FEATURE_NAMES
-   contract as `trained-policy-runtime.js`. `train_distill.py` then behavior-clones
-   those exact-CFR targets into an MLP (`npm run train:distill`) — unlike the
-   self-play artifact, the targets are real equilibrium strategies. Exports a
-   `distill-open` artifact in the existing mlp-softmax contract. Next: train on the
-   full board library, wire it into the runtime for open nodes, and re-measure
-   exploitability on *held-out* boards. `npm run gen:dataset`.
+7. **Generalize GTO via distillation — generalization confirmed.** Exact per-combo
+   solved tables don't transfer between boards, so the solver is distilled into a
+   network. `gen_solved_dataset.py` / `parallel_gen.py` solve many river boards
+   (bet buckets aligned to the artifact's open action set) and emit
+   `(feature vector, GTO open distribution)` pairs; `train_distill.py`
+   behavior-clones those **exact-CFR** targets into an MLP (mlp-softmax contract).
+
+   `eval_generalization.py` proves it generalizes — comparing the model to exact
+   GTO on boards it never trained on (140-board training set, 151k rows):
+
+   | metric | value |
+   |--------|------:|
+   | in-sample KL (held-out rows) | 0.051 |
+   | **held-out BOARDS** (12 unseen) KL | 0.073 |
+   | held-out boards total-variation from GTO | **0.103** |
+   | vs predict-the-mean baseline | **66.6% better** |
+
+   So on unseen river spots the distilled policy is within ~10% TV of exact
+   equilibrium. Trained artifact: `src/distilled-policy-artifact.js`. Next: wire it
+   into the runtime for open nodes (with JS-side feature parity) and re-measure the
+   engine's exploitability on held-out boards. `npm run eval:generalization`.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 
