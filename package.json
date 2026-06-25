@@ -1,0 +1,21 @@
+{
+  "name": "texas-gto-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "serve": "node server/index.js",
+    "dev:stable": "tmux has-session -t texas-gto-lab 2>/dev/null || tmux new-session -d -s texas-gto-lab -c \"$PWD\" 'npm run build && HOST=127.0.0.1 PORT=5174 npm run serve'",
+    "dev:stop": "tmux kill-session -t texas-gto-lab",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node test/engine.test.js"
+  },
+  "dependencies": {
+    "lucide": "^1.21.0",
+    "pokersolver": "^2.1.4",
+    "vite": "^8.0.16",
+    "ws": "^8.21.0"
+  }
+}
