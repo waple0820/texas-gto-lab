@@ -12,7 +12,9 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node test/engine.test.js && node test/strategy-audit.test.js",
     "test:strategy-audit": "node test/strategy-audit.test.js",
-    "train:policy": "python3 scripts/train-policy.py"
+    "test:solver": "python3 scripts/solver/river_cfr.py --self-test",
+    "train:policy": "python3 scripts/train-policy.py",
+    "solve:river": "python3 scripts/solver/river_cfr.py"
   },
   "dependencies": {
     "lucide": "^1.21.0",
