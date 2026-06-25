@@ -141,18 +141,59 @@ npm run solve:gpu-turn -- --device cuda --dtype float32 --max-combos 0 \
 The 5090 host runs the solver from a torch venv
 (`/home/wf/apps/texas-gto-lab-train/.venv-policy`); the repo is rsynced there.
 
+## Stage 4 — Flop three-street solve, turn-sampled / river-exact (done)
+
+`scripts/solver/flop_mccfr.py` solves the full **flop → turn → river** game.
+Materializing all three streets is ~10^5 nodes, so chance is handled by sampling
+— but sampling *both* the turn and river scatters updates across ~2300 river
+information sets that then never train (verified: exploitability barely moved,
+65% → 53%). So it samples only the **turn** card and **enumerates the river
+exactly** (reusing the two-street turn solver):
+
+- each iteration samples one turn card, masks blocked combos, and runs vectorized
+  CFR+ over flop betting → turn betting → river chance (every river enumerated) →
+  river betting → showdown;
+- information sets: flop nodes keyed by node; turn/river nodes by (node, turn).
+- every river subgame is solved well per visit, so a turn infoset trains every
+  time its card is sampled (~iters/49) and convergence takes thousands of
+  iterations, not millions.
+
+Distance to GTO is an **exact enumerated best response** over all turn/river
+cards (per-player chance weights, exact blocker masks) — same method as the other
+solvers. Observed convergence (50-combo range, single bet size):
+
+| iters | exploitability |
+|------:|---------------:|
+|     0 |    ~85% pot |
+|   400 |    ~28% pot |
+|  2000 |    ~11% pot |
+
+The trend is unambiguous and the best response is exact; the floor falls with
+more iterations. Turn sampling makes this slower than the exact-enumeration river
+/ turn solvers (single digits in a few hundred iters), so flop is the natural
+target for the GPU and card abstraction next.
+
+### Run / validate
+
+```bash
+npm run solve:flop -- --board "Kh 9d 4s" --iterations 4000 --expl-every 1000
+npm run test:solver-flop   # ~25s convergence-trend guard (separate from test:solver)
+```
+
+`test:solver-flop` is kept out of the bundled `test:solver` because each iteration
+is tree-bound (the river is enumerated), so it runs longer than the exact solvers.
+
 ## Roadmap
 
 1. **River subgame solver + exact exploitability** ✅
 2. **Turn → river two-street solve (chance node + river subgames)** ✅
 3. **GPU torch port — full-range river *and* turn solves on the dual-5090 host** ✅
-4. Flop street via GPU sampling (MCCFR) — full three-street enumeration is ~10^5
-   tree nodes, so the flop chance layers are sampled while keeping exact
-   best-response measurement.
-5. Card/preflop abstraction; export solved strategies into the JS artifact
-   contract (`src/trained-policy-artifact.js`) and retire hand-written safeguards
-   as the solved policy becomes trustworthy.
-6. End-to-end exploitability measurement of the deployed policy.
+4. **Flop three-street solve (turn-sampled, river-exact MCCFR)** ✅
+5. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
+   exploitability to single digits; multiple bet sizes.
+6. Export solved strategies into the JS artifact contract
+   (`src/trained-policy-artifact.js`); measure the deployed policy's exploitability
+   against the solved baseline and retire hand-written safeguards as it improves.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
