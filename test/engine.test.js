@@ -137,6 +137,8 @@ const dryBoardBlockerBluff = recommendStrategy({
   rng: mulberry32(17),
 });
 assert.equal(trainedPolicyArtifact.passed, true);
+assert.equal(trainedPolicyArtifact.policyKind, "regret-matching");
+assert.equal(trainedPolicyArtifact.model.type, "mlp-regret");
 assert.equal(dryBoardBlockerBluff.policySource.type, "trained");
 assert.equal(dryBoardBlockerBluff.rangeModel.role, "blocker-bluff");
 assert.ok(betFrequency(dryBoardBlockerBluff) > 0.42, `blocker bluff frequency ${betFrequency(dryBoardBlockerBluff)}`);
