@@ -105,16 +105,42 @@ multi-board solves run on the dual-5090 host.
 
 `npm run test:solver` now runs **both** the river and turn convergence guards.
 
+## Stage 3 — GPU torch port (done)
+
+`scripts/solver/solver_torch.py` reimplements the exact river CFR+ in torch so it
+runs on CUDA. The numpy solvers are exact but CPU-bound (small validation ranges
+only); the torch port solves **full-range** spots (every combo) at scale.
+
+- **Byte-faithful to numpy.** `--self-test` asserts torch (CPU, float64) matches
+  `river_cfr` exploitability within 0.1% on a fixed case, and that full-range
+  river convergence stays < 0.6% pot — both run locally on CPU.
+- **GPU verified.** On the dual-5090 host a full-range river solve (1081 combos,
+  2000 iters) reaches 0.356% pot exploitability in **3.1s on CUDA**, numerically
+  identical to the CPU solve (CFR+ is deterministic).
+
+```bash
+# local validation (CPU)
+npm run test:solver
+# full-range GPU solve on the 5090 host
+npm run solve:gpu -- --device cuda --dtype float32 --iterations 2000 \
+  --board "Kh 9d 4s 2c 7h"
+```
+
+The 5090 host runs the solver from a torch venv
+(`/home/wf/apps/texas-gto-lab-train/.venv-policy`); the repo is rsynced there.
+
 ## Roadmap
 
 1. **River subgame solver + exact exploitability** ✅
 2. **Turn → river two-street solve (chance node + river subgames)** ✅
-3. Flop street (turn chance node), multiple bet sizes, full postflop tree; large
-   solves on the dual-5090 host.
-4. Card/preflop abstraction; export solved strategies into the JS artifact
+3. **GPU torch port (full-range solves on the dual-5090 host)** ✅
+4. Flop street via GPU sampling (MCCFR) — full three-street enumeration is ~10^5
+   tree nodes, so the flop chance layers are sampled while keeping exact
+   best-response measurement.
+5. Card/preflop abstraction; export solved strategies into the JS artifact
    contract (`src/trained-policy-artifact.js`) and retire hand-written safeguards
    as the solved policy becomes trustworthy.
-5. End-to-end exploitability measurement of the deployed policy.
+6. End-to-end exploitability measurement of the deployed policy.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
