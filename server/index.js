@@ -374,6 +374,18 @@ function commit(player, amount) {
   return paid;
 }
 
+function actionId(action) {
+  return typeof action === "string" ? action : action?.id || action?.type || "check-call";
+}
+
+function actionSize(action) {
+  return typeof action === "object" && Number.isFinite(Number(action.size)) ? Math.max(0, Number(action.size)) : 0;
+}
+
+function actionDisplayLabel(action, fallback) {
+  return typeof action === "object" && action.label ? String(action.label) : fallback;
+}
+
 function handlePlayerAction(player, action) {
   if (table.phase !== "playing" || table.turnId !== player.id || player.folded || player.allIn) return;
   const actionCount = table.actions.length;
@@ -386,14 +398,15 @@ function handlePlayerAction(player, action) {
 }
 
 function applyAction(player, action) {
+  const id = actionId(action);
   const toCall = toCallFor(player);
-  if (action === "fold" && toCall > 0) {
+  if (id === "fold" && toCall > 0) {
     player.folded = true;
     table.acted.add(player.id);
     recordAction(player, "fold", "弃牌", 0);
     return;
   }
-  if (action === "check-call") {
+  if (id === "check-call") {
     if (toCall > 0) {
       const paid = commit(player, toCall);
       recordAction(player, "call", "跟注", paid);
@@ -403,15 +416,29 @@ function applyAction(player, action) {
     table.acted.add(player.id);
     return;
   }
-  const aggressive = action === "half" ? 0.5 : action === "pot" ? 1 : action === "allin" ? "allin" : null;
+  const aggressive =
+    id === "third"
+      ? 0.33
+      : id === "half"
+        ? 0.5
+        : id === "two-thirds"
+          ? 0.66
+          : id === "pot"
+            ? 1
+            : id === "overbet"
+              ? 1.25
+              : id === "allin"
+                ? "allin"
+                : null;
   if (aggressive) {
-    const size = aggressive === "allin" ? player.stack + toCall : Math.max(BIG_BLIND, table.pot * aggressive);
-    const target = action === "allin" ? player.streetBet + player.stack : table.currentBet + size;
+    const explicitSize = actionSize(action);
+    const size = aggressive === "allin" ? player.stack + toCall : explicitSize || Math.max(BIG_BLIND, table.pot * aggressive);
+    const target = id === "allin" ? player.streetBet + player.stack : table.currentBet + size;
     const paid = commit(player, Math.max(0, target - player.streetBet));
     table.currentBet = Math.max(table.currentBet, player.streetBet);
     table.acted = new Set([player.id]);
     const type = player.allIn ? "allin" : table.street === "preflop" || toCall > 0 ? "raise" : "bet";
-    const label = player.allIn ? "全压" : type === "raise" ? "加注" : "下注";
+    const label = player.allIn ? "全压" : actionDisplayLabel(action, type === "raise" ? "加注" : "下注");
     recordAction(player, type, label, paid);
   }
 }
@@ -670,27 +697,46 @@ function contextFor(player, toCall) {
 }
 
 function actionKey(action, toCall, street = table.street) {
-  if (action === "fold") return "fold";
-  if (action === "check-call") return toCall > 0 ? "call" : "check";
-  if (action === "half") return toCall > 0 || street === "preflop" ? "raise" : "bet-small";
-  if (action === "pot" || action === "allin") return toCall > 0 ? "raise" : "bet-big";
+  const id = actionId(action);
+  if (id === "fold") return "fold";
+  if (id === "check-call") return toCall > 0 ? "call" : "check";
+  if (toCall > 0) {
+    if (id === "allin") return "jam";
+    if (id === "pot" || id === "overbet") return "raise-big";
+    if (id === "third" || id === "half" || id === "two-thirds") return "raise-small";
+  }
+  if (street === "preflop") {
+    if (id === "third" || id === "half" || id === "two-thirds" || id === "pot" || id === "overbet" || id === "allin") return "raise";
+  }
+  if (id === "third") return "bet-small";
+  if (id === "half" || id === "two-thirds") return "bet-mid";
+  if (id === "pot") return "bet-big";
+  if (id === "overbet" || id === "allin") return "bet-over";
   return "check";
 }
 
 function actionLabel(action, toCall, street = table.street) {
-  if (action === "fold") return "弃牌";
-  if (action === "check-call") return toCall > 0 ? "跟注" : "过牌";
-  if (action === "half") return toCall > 0 || street === "preflop" ? "小加注" : "小注";
-  if (action === "pot") return toCall > 0 || street === "preflop" ? "大加注" : "大注";
-  if (action === "allin") return "All-in";
-  return action;
+  const id = actionId(action);
+  if (id === "fold") return "弃牌";
+  if (id === "check-call") return toCall > 0 ? "跟注" : "过牌";
+  if (id === "third") return toCall > 0 || street === "preflop" ? "小加注" : "1/3 pot";
+  if (id === "half") return toCall > 0 || street === "preflop" ? "小加注" : "1/2 pot";
+  if (id === "two-thirds") return toCall > 0 || street === "preflop" ? "中加注" : "2/3 pot";
+  if (id === "pot") return toCall > 0 || street === "preflop" ? "大加注" : "Pot";
+  if (id === "overbet") return "Overbet";
+  if (id === "allin") return "All-in";
+  return id;
 }
 
 function frequencyFor(actions, key) {
   const exact = actions.find((item) => item.key === key);
   if (exact) return exact.frequency;
-  if (key === "bet-small") return actions.find((item) => item.key === "bet-big")?.frequency || 0;
-  if (key === "bet-big") return actions.find((item) => item.key === "bet-small")?.frequency || 0;
+  if (key === "raise") return actions.filter((item) => ["raise", "raise-small", "raise-big", "jam"].includes(item.key)).reduce((sum, item) => sum + item.frequency, 0);
+  if (key === "raise-small" || key === "raise-big" || key === "jam") return actions.find((item) => item.key === "raise")?.frequency || 0;
+  if (key === "bet-small") return actions.find((item) => item.key === "bet-mid")?.frequency || actions.find((item) => item.key === "bet-big")?.frequency || 0;
+  if (key === "bet-mid") return actions.find((item) => item.key === "bet-small")?.frequency || actions.find((item) => item.key === "bet-big")?.frequency || 0;
+  if (key === "bet-big") return actions.find((item) => item.key === "bet-mid")?.frequency || actions.find((item) => item.key === "bet-small")?.frequency || 0;
+  if (key === "bet-over") return actions.find((item) => item.key === "bet-big")?.frequency || 0;
   return 0;
 }
 
@@ -711,18 +757,41 @@ function queueAiIfNeeded() {
     if (current?.type !== "ai") return;
     const recommendation = recommendFor(current);
     const picked = pickAction(recommendation.actions, Math.random, current.aiTemperature || 1);
-    let action = "check-call";
-    if (toCallFor(current) > 0) {
-      if (picked.key === "fold") action = "fold";
-      else if (picked.key === "raise") action = "half";
-    } else if (picked.key === "bet-small") {
-      action = "half";
-    } else if (picked.key === "bet-big" || picked.key === "raise") {
-      action = "pot";
-    }
+    const action = actionForRecommendation(picked, recommendation, toCallFor(current));
     handlePlayerAction(current, action);
   }, 650);
   pendingAiTimers.add(timer);
+}
+
+function actionForRecommendation(picked, recommendation, toCall) {
+  if (toCall > 0) {
+    if (picked.key === "fold") return "fold";
+    if (picked.key === "jam") return "allin";
+    if (picked.key === "raise-big" || picked.key === "raise") return "pot";
+    if (picked.key === "raise-small") return "half";
+    return "check-call";
+  }
+  if (picked.key === "bet-small") return sizedAction("third", recommendation, "small", "小注");
+  if (picked.key === "bet-mid") return sizedAction("half", recommendation, "mid", "中注");
+  if (picked.key === "bet-big" || picked.key === "raise") return sizedAction("pot", recommendation, "big", "大注");
+  if (picked.key === "bet-over") return sizedAction("overbet", recommendation, "over", "超池");
+  return "check-call";
+}
+
+function sizedAction(id, recommendation, bucket, label) {
+  const option = sizingOptionForBucket(recommendation.sizing?.options || [], bucket) || recommendation.sizing;
+  return { id, size: option?.amount || 0, label: option?.label || label };
+}
+
+function sizingOptionForBucket(options, bucket) {
+  const ranges = {
+    small: (option) => (option.fraction || 0) > 0 && option.fraction <= 0.35,
+    mid: (option) => (option.fraction || 0) > 0.35 && option.fraction <= 0.7,
+    big: (option) => (option.fraction || 0) > 0.7 && option.fraction <= 1.05,
+    over: (option) => (option.fraction || 0) > 1.05,
+  };
+  const matches = options.filter(ranges[bucket] || (() => false));
+  return matches.find((option) => option.recommended) || matches[0] || null;
 }
 
 function clearAiTimers() {
@@ -788,6 +857,18 @@ function actionOptionsFor(player) {
   if (!player || table.phase !== "playing" || table.turnId !== player.id || player.folded || player.allIn) return [];
   const toCall = toCallFor(player);
   const noCallPreflop = toCall <= 0 && table.street === "preflop";
+  const noCallPostflop = toCall <= 0 && table.street !== "preflop";
+  if (noCallPostflop) {
+    return [
+      { id: "check-call", label: "过牌" },
+      { id: "third", label: "1/3 pot" },
+      { id: "half", label: "1/2 pot" },
+      { id: "two-thirds", label: "2/3 pot" },
+      { id: "pot", label: "Pot" },
+      { id: "overbet", label: "Overbet" },
+      { id: "allin", label: "All-in" },
+    ];
+  }
   return [
     ...(toCall > 0 ? [{ id: "fold", label: "弃牌" }] : []),
     { id: "check-call", label: toCall > 0 ? `跟注 ${toCall}bb` : "过牌" },

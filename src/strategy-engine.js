@@ -14,6 +14,7 @@ import {
   round,
   scoreHandCode,
 } from "./poker-core.js";
+import { PREFLOP_POLICY_VERSION, preflopStrategyActions } from "./preflop-policy.js";
 import { applyTrainedPolicy } from "./trained-policy-runtime.js";
 
 const POSITION_EDGE = {
@@ -331,6 +332,23 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
   return makeSizing(primary, "常规混合尺度，保留小注、中注、大注和极化 overbet", postflopOptions);
 }
 
+function alignSizingWithActions(sizing, actions, board, toCall) {
+  if (!sizing?.options?.length || board.length < 3 || toCall > 0) return sizing;
+  if (sizing.label?.includes("All-in")) return sizing;
+  const top = actions[0]?.key;
+  const buckets = {
+    "bet-small": (option) => (option.fraction || 0) > 0 && option.fraction <= 0.35,
+    "bet-mid": (option) => (option.fraction || 0) > 0.35 && option.fraction <= 0.7,
+    "bet-big": (option) => (option.fraction || 0) > 0.7 && option.fraction <= 1.05,
+    "bet-over": (option) => (option.fraction || 0) > 1.05,
+  };
+  const matcher = buckets[top];
+  if (!matcher) return sizing;
+  const primary = sizing.options.find((option) => matcher(option));
+  if (!primary || primary.label === sizing.label) return sizing;
+  return makeSizing(primary, `按最高频动作 ${actions[0].label} 同步主尺度`, sizing.options);
+}
+
 function strategyFacingBet({ equity, metrics, profile, position, context, rangeModel }) {
   const edge = equity - metrics.potOdds;
   const draws = profile.draws;
@@ -359,11 +377,16 @@ function strategyFacingBet({ equity, metrics, profile, position, context, rangeM
     call -= 0.03;
     fold -= 0.05;
   }
+  const jam = clamp((metrics.spr < 2.4 ? 0.08 : 0) + (equity - 0.68) * 0.7 + Math.max(0, nutted - 0.62) * 0.55, 0.002, 0.36);
+  const bigRaise = clamp(raise * (0.28 + semiBluff * 0.75 + Math.max(0, nutted - 0.32) * 0.45), 0.006, 0.44);
+  const smallRaise = clamp(raise - bigRaise * 0.72 - jam * 0.5, 0.008, 0.62);
 
   return normalizeActions([
     { key: "fold", label: "弃牌", weight: fold, tone: "danger" },
     { key: "call", label: "跟注", weight: call, tone: "neutral" },
-    { key: "raise", label: metrics.spr < 2.3 ? "全压" : "加注", weight: raise, tone: "accent" },
+    { key: "raise-small", label: "小加注", weight: smallRaise, tone: "accent" },
+    { key: "raise-big", label: "大加注", weight: bigRaise, tone: "strong" },
+    { key: "jam", label: "全压", weight: jam, tone: "strong" },
   ]);
 }
 
@@ -377,14 +400,12 @@ function strategyOpenAction({ equity, metrics, profile, position, context, range
   const preflopStrength = clamp((profile.preflopScore - 48) / 45, 0, 1);
 
   if (preflop) {
-    const open = clamp(preflopStrength * 0.98 + positionBoost + (context === "unopened" ? 0.08 : -0.03), 0.02, 0.94);
-    const call = clamp(preflopStrength * 0.32 + (context === "blind-defense" ? 0.32 : 0.04), 0.02, 0.58);
-    const fold = clamp(1 - open - call, 0.02, 0.9);
-    return normalizeActions([
-      { key: "fold", label: "弃牌", weight: fold, tone: "danger" },
-      { key: "call", label: context === "unopened" ? "少量跟入" : "跟注", weight: call, tone: "neutral" },
-      { key: "raise", label: context === "unopened" ? "Open" : "加注", weight: open, tone: "accent" },
-    ]);
+    return preflopStrategyActions({
+      handCode: profile.handCode,
+      position,
+      context,
+      stackBb: metrics.effectiveStack,
+    });
   }
 
   const rangeTarget = rangeBetTarget({ profile, context, position, rangeModel });
@@ -405,13 +426,26 @@ function strategyOpenAction({ equity, metrics, profile, position, context, range
   const protection = clamp(made > 0 && equity < 0.55 ? 0.07 + rangeTarget * 0.1 : 0, 0, 0.2);
   const bigBet = clamp((equity - 0.63) * 1.05 + made * 0.16 + semiBluff * 0.36 + Math.max(0, rangeModel.blockers - 0.08) * 0.8 + pressure, 0.015, 0.5);
   const targetBet = clamp(rangeTarget * 0.34 + value * 0.52 + rangeBluff * 0.82 + protection, 0.055, 0.9);
-  const smallBet = clamp(targetBet - bigBet * 0.58, 0.035, 0.88);
-  const check = clamp(1 - smallBet - bigBet, 0.05, 0.9);
+  const overBet = clamp(
+    (profile.street === "river" || profile.street === "turn" ? 1 : 0) *
+      ((equity - 0.72) * 0.72 + Math.max(0, made - 0.62) * 0.72 + Math.max(0, rangeModel.advantage - 0.62) * 0.5),
+    0.005,
+    0.28,
+  );
+  const remainingBet = clamp(targetBet - overBet * 0.72, 0.035, 0.9);
+  const midShare = clamp(0.28 + (profile.texture.wetness || 0) * 0.34 + (profile.street === "turn" ? 0.08 : 0), 0.24, 0.62);
+  const bigShare = clamp(0.16 + bigBet * 0.72 + (profile.street === "river" ? 0.08 : 0), 0.08, 0.5);
+  const smallBet = clamp(remainingBet * (1 - midShare) - bigBet * 0.18, 0.025, 0.72);
+  const midBet = clamp(remainingBet * midShare, 0.02, 0.56);
+  const big = clamp(bigBet * 0.52 + remainingBet * bigShare, 0.015, 0.48);
+  const check = clamp(1 - smallBet - midBet - big - overBet, 0.04, 0.92);
 
   return normalizeActions([
     { key: "check", label: "过牌", weight: check, tone: "neutral" },
     { key: "bet-small", label: "小注", weight: smallBet, tone: "accent" },
-    { key: "bet-big", label: "大注", weight: bigBet, tone: "strong" },
+    { key: "bet-mid", label: "中注", weight: midBet, tone: "accent" },
+    { key: "bet-big", label: "大注", weight: big, tone: "strong" },
+    { key: "bet-over", label: "超池", weight: overBet, tone: "strong" },
   ]);
 }
 
@@ -420,17 +454,12 @@ function strategyCheckOption({ equity, metrics, profile, position, rangeModel })
     return strategyOpenAction({ equity, metrics, profile, position, context: "single-raised", rangeModel });
   }
 
-  const positionBoost = POSITION_EDGE[position] || 0;
-  const preflopStrength = clamp((profile.preflopScore - 48) / 45, 0, 1);
-  const raise = clamp(preflopStrength * 0.62 + positionBoost + 0.035, 0.035, 0.68);
-  const bigRaise = clamp((preflopStrength - 0.64) * 0.52 + positionBoost * 0.45, 0, 0.28);
-  const check = clamp(1 - raise - bigRaise, 0.18, 0.96);
-
-  return normalizeActions([
-    { key: "check", label: "过牌", weight: check, tone: "neutral" },
-    { key: "raise", label: "加注", weight: raise, tone: "accent" },
-    { key: "bet-big", label: "大加注", weight: bigRaise, tone: "strong" },
-  ]);
+  return preflopStrategyActions({
+    handCode: profile.handCode,
+    position,
+    context: "check-option",
+    stackBb: metrics.effectiveStack,
+  });
 }
 
 function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel, policySource }) {
@@ -440,6 +469,7 @@ function buildReasons({ equityResult, metrics, profile, rangeInfo, position, con
     `对手范围 ${round(rangeInfo.percent * 100, 1)}% (${rangeInfo.combos} combos)`,
     `范围角色 ${rangeModel.roleLabel} / 分位 ${pct(rangeModel.percentile, 0)}`,
     policySource.type === "trained" ? `训练策略 ${policySource.version}` : null,
+    policySource.type === "preflop" ? `翻前范围表 ${policySource.version}` : null,
     profile.street === "preflop" ? `起手牌 ${profile.handCode}` : `${profile.description}`,
     `位置 ${position} / ${context}`,
   ].filter(Boolean);
@@ -508,7 +538,7 @@ export function recommendStrategy({
       ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
       : hasFreeCheckOption(context)
         ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
-      : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
+        : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
   const trained = applyTrainedPolicy({
     actions: heuristicActions,
     board,
@@ -529,8 +559,10 @@ export function recommendStrategy({
         blend: trained.artifact.blend,
         validation: trained.artifact.validation,
       }
-    : { type: "heuristic", version: "range-role-v1" };
-  const sizing = chooseSizing({
+    : profile.street === "preflop"
+      ? { type: "preflop", version: PREFLOP_POLICY_VERSION }
+      : { type: "heuristic", version: "range-role-v1" };
+  const baseSizing = chooseSizing({
     board,
     metrics,
     profile,
@@ -539,6 +571,7 @@ export function recommendStrategy({
     context,
     position,
   });
+  const sizing = alignSizingWithActions(baseSizing, actions, board, metrics.toCall);
 
   return {
     actions,

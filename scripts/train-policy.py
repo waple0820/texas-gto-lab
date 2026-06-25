@@ -44,6 +44,10 @@ FEATURE_NAMES = [
     "free_check",
 ]
 
+OPEN_ACTIONS = ["check", "bet-small", "bet-mid", "bet-big", "bet-over"]
+FACING_ACTIONS = ["fold", "call", "raise-small", "raise-big", "jam"]
+ACTION_COUNT = 5
+
 
 @dataclass
 class Gate:
@@ -65,7 +69,7 @@ def normalize(rows):
 def target_policy(x: np.ndarray) -> np.ndarray:
     f = {name: x[:, index] for index, name in enumerate(FEATURE_NAMES)}
     facing = f["to_call_flag"] > 0.5
-    target = np.zeros((x.shape[0], 3), dtype=np.float32)
+    target = np.zeros((x.shape[0], ACTION_COUNT), dtype=np.float32)
 
     equity = f["equity"]
     pot_odds = f["pot_odds"]
@@ -113,10 +117,21 @@ def target_policy(x: np.ndarray) -> np.ndarray:
             0.46,
         )
         protection = clamp(np.where((made > 0) & (equity < 0.55), 0.07 + range_target * 0.1, 0), 0, 0.2)
-        big = clamp((equity - 0.63) * 1.05 + made * 0.16 + draw * 0.45 + np.maximum(0, blockers - 0.08) * 0.8 + wet * 0.055, 0.015, 0.5)
-        small = clamp(range_target * 0.34 + value * 0.52 + bluff * 0.82 + protection - big * 0.58, 0.035, 0.88)
-        check = clamp(1 - small - big, 0.05, 0.9)
-        open_target = normalize(np.stack([check, small, big], axis=1))
+        big_seed = clamp((equity - 0.63) * 1.05 + made * 0.16 + draw * 0.45 + np.maximum(0, blockers - 0.08) * 0.8 + wet * 0.055, 0.015, 0.5)
+        over = clamp(
+            f["street_turn"] * ((equity - 0.76) * 0.35 + np.maximum(0, made - 0.62) * 0.28)
+            + f["street_river"] * ((equity - 0.7) * 0.78 + np.maximum(0, made - 0.62) * 0.72 + np.maximum(0, adv - 0.62) * 0.44),
+            0.002,
+            0.32,
+        )
+        remaining = clamp(range_target * 0.34 + value * 0.52 + bluff * 0.82 + protection - over * 0.66, 0.035, 0.9)
+        mid_share = clamp(0.27 + wet * 0.34 + f["street_turn"] * 0.08, 0.22, 0.62)
+        big_share = clamp(0.15 + big_seed * 0.72 + f["street_river"] * 0.08, 0.08, 0.5)
+        small = clamp(remaining * (1 - mid_share) - big_seed * 0.18, 0.025, 0.72)
+        mid = clamp(remaining * mid_share, 0.02, 0.56)
+        big = clamp(big_seed * 0.52 + remaining * big_share, 0.015, 0.48)
+        check = clamp(1 - small - mid - big - over, 0.04, 0.92)
+        open_target = normalize(np.stack([check, small, mid, big, over], axis=1))
         target[open_rows] = open_target[open_rows]
 
     if facing.any():
@@ -133,7 +148,10 @@ def target_policy(x: np.ndarray) -> np.ndarray:
         low_spr_pressure = (spr < 0.13) & (equity > 0.52)
         raise_ = np.where(low_spr_pressure, raise_ + 0.18, raise_)
         call = np.where(low_spr_pressure, call - 0.08, call)
-        facing_target = normalize(np.stack([fold, call, raise_], axis=1))
+        jam = clamp((spr < 0.13) * 0.08 + (equity - 0.68) * 0.7 + np.maximum(0, made - 0.62) * 0.55, 0.002, 0.36)
+        big_raise = clamp(raise_ * (0.28 + draw * 0.75 + np.maximum(0, made - 0.32) * 0.45), 0.006, 0.44)
+        small_raise = clamp(raise_ - big_raise * 0.72 - jam * 0.5, 0.008, 0.62)
+        facing_target = normalize(np.stack([fold, call, small_raise, big_raise, jam], axis=1))
         target[facing] = facing_target[facing]
 
     return target
@@ -249,6 +267,19 @@ def gate_rows() -> dict[str, np.ndarray]:
             range_coverage=0.5,
             context_aggressor=1,
         ),
+        "river_nut_overbets": row(
+            equity=0.86,
+            spr_norm=0.45,
+            street_river=1,
+            position_signal=0.76,
+            made_strength=0.78,
+            wetness=0.18,
+            range_advantage=0.72,
+            range_percentile=0.96,
+            range_weight=1,
+            range_coverage=0.38,
+            context_aggressor=1,
+        ),
     }
 
 
@@ -268,7 +299,7 @@ def build_model(nn, hidden: int):
         nn.ReLU(),
         nn.Linear(hidden, hidden),
         nn.ReLU(),
-        nn.Linear(hidden, 3),
+        nn.Linear(hidden, ACTION_COUNT),
     )
 
 
@@ -304,14 +335,17 @@ def run_gates(validation: dict, behavior: dict[str, list[float]], max_kl: float,
     wet = behavior["wet_air_checks"]
     draw = behavior["flush_draw_raises_vs_bet"]
     value = behavior["value_bets"]
+    river_nuts = behavior["river_nut_overbets"]
     gates.extend(
         [
-            Gate("dry_blocker_bluff_bet_total", dry[1] + dry[2] >= 0.42, dry[1] + dry[2], ">= 0.42"),
+            Gate("dry_blocker_bluff_bet_total", sum(dry[1:]) >= 0.42, sum(dry[1:]), ">= 0.42"),
             Gate("wet_air_check", wet[0] >= 0.5, wet[0], ">= 0.50"),
-            Gate("wet_air_bet_cap", wet[1] + wet[2] <= 0.5, wet[1] + wet[2], "<= 0.50"),
-            Gate("flush_draw_raise_vs_bet", draw[2] >= 0.18, draw[2], ">= 0.18"),
+            Gate("wet_air_bet_cap", sum(wet[1:]) <= 0.5, sum(wet[1:]), "<= 0.50"),
+            Gate("flush_draw_raise_vs_bet", sum(draw[2:]) >= 0.18, sum(draw[2:]), ">= 0.18"),
             Gate("flush_draw_fold_cap", draw[0] <= 0.2, draw[0], "<= 0.20"),
-            Gate("value_bet_total", value[1] + value[2] >= 0.62, value[1] + value[2], ">= 0.62"),
+            Gate("value_bet_total", sum(value[1:]) >= 0.62, sum(value[1:]), ">= 0.62"),
+            Gate("value_big_plus_over", value[3] + value[4] >= 0.14, value[3] + value[4], ">= 0.14"),
+            Gate("river_nut_overbet", river_nuts[4] >= 0.18, river_nuts[4], ">= 0.18"),
         ]
     )
     return gates
@@ -351,8 +385,8 @@ def export_artifact(model, args, validation, behavior, gates, train_seconds, out
         },
         "featureNames": FEATURE_NAMES,
         "actionSets": {
-            "open": ["check", "bet-small", "bet-big"],
-            "facing": ["fold", "call", "raise"],
+            "open": OPEN_ACTIONS,
+            "facing": FACING_ACTIONS,
         },
         "blend": args.blend,
         "validation": {key: round(float(value), 6) for key, value in validation.items()},
@@ -388,7 +422,7 @@ def main():
     parser.add_argument("--max-kl", type=float, default=0.012)
     parser.add_argument("--max-mae", type=float, default=0.028)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--version", default="postflop-range-mlp-v1")
+    parser.add_argument("--version", default="postflop-size-aware-mlp-v2")
     parser.add_argument("--out", default="src/trained-policy-artifact.js")
     args = parser.parse_args()
 

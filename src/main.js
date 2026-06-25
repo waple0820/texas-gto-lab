@@ -679,16 +679,29 @@ function heroReviewContext(toCall) {
 function actionKeyForReview(type, toCall, street = simulator.street) {
   if (type === "fold") return "fold";
   if (type === "check-call") return toCall > 0 ? "call" : "check";
-  if (type === "half") return toCall > 0 || street === "preflop" ? "raise" : "bet-small";
-  if (type === "pot" || type === "allin") return toCall > 0 ? "raise" : "bet-big";
+  if (toCall > 0) {
+    if (type === "allin") return "jam";
+    if (type === "pot" || type === "overbet") return "raise-big";
+    if (type === "third" || type === "half" || type === "two-thirds") return "raise-small";
+  }
+  if (street === "preflop") {
+    if (["third", "half", "two-thirds", "pot", "overbet", "allin"].includes(type)) return "raise";
+  }
+  if (type === "third") return "bet-small";
+  if (type === "half" || type === "two-thirds") return "bet-mid";
+  if (type === "pot") return "bet-big";
+  if (type === "overbet" || type === "allin") return "bet-over";
   return "check";
 }
 
 function actionLabelForReview(type, toCall, street = simulator.street) {
   if (type === "fold") return "弃牌";
   if (type === "check-call") return toCall > 0 ? "跟注" : "过牌";
-  if (type === "half") return toCall > 0 || street === "preflop" ? "小加注" : "小注";
-  if (type === "pot") return toCall > 0 || street === "preflop" ? "大加注" : "大注";
+  if (type === "third") return toCall > 0 || street === "preflop" ? "小加注" : "1/3 pot";
+  if (type === "half") return toCall > 0 || street === "preflop" ? "小加注" : "1/2 pot";
+  if (type === "two-thirds") return toCall > 0 || street === "preflop" ? "中加注" : "2/3 pot";
+  if (type === "pot") return toCall > 0 || street === "preflop" ? "大加注" : "Pot";
+  if (type === "overbet") return "Overbet";
   if (type === "allin") return "All-in";
   return type;
 }
@@ -696,8 +709,12 @@ function actionLabelForReview(type, toCall, street = simulator.street) {
 function reviewFrequency(actions, key) {
   const exact = actions.find((action) => action.key === key);
   if (exact) return exact.frequency;
-  if (key === "bet-big") return actions.find((action) => action.key === "bet-small")?.frequency || 0;
-  if (key === "bet-small") return actions.find((action) => action.key === "bet-big")?.frequency || 0;
+  if (key === "raise") return actions.filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key)).reduce((sum, action) => sum + action.frequency, 0);
+  if (key === "raise-small" || key === "raise-big" || key === "jam") return actions.find((action) => action.key === "raise")?.frequency || 0;
+  if (key === "bet-small") return actions.find((action) => action.key === "bet-mid")?.frequency || actions.find((action) => action.key === "bet-big")?.frequency || 0;
+  if (key === "bet-mid") return actions.find((action) => action.key === "bet-small")?.frequency || actions.find((action) => action.key === "bet-big")?.frequency || 0;
+  if (key === "bet-big") return actions.find((action) => action.key === "bet-mid")?.frequency || actions.find((action) => action.key === "bet-small")?.frequency || 0;
+  if (key === "bet-over") return actions.find((action) => action.key === "bet-big")?.frequency || 0;
   return 0;
 }
 
@@ -805,6 +822,16 @@ function renderSimActions() {
     $("#sim-actions").innerHTML = `<button class="primary-action" data-sim="new"><i data-lucide="play"></i><span>下一手</span></button>`;
   } else if (simulator.toAct !== "hero") {
     $("#sim-actions").innerHTML = `<div class="waiting">AI thinking...</div>`;
+  } else if (toCall <= 0 && simulator.street !== "preflop") {
+    $("#sim-actions").innerHTML = `
+      <button data-sim="check-call">过牌</button>
+      <button data-sim="third">1/3 pot</button>
+      <button data-sim="half">1/2 pot</button>
+      <button data-sim="two-thirds">2/3 pot</button>
+      <button data-sim="pot">Pot</button>
+      <button data-sim="overbet">Overbet</button>
+      <button data-sim="allin">All-in</button>
+    `;
   } else {
     $("#sim-actions").innerHTML = `
       <button ${toCall <= 0 ? "disabled" : ""} data-sim="fold">弃牌</button>

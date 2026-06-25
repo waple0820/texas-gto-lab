@@ -191,12 +191,16 @@ export class HoldemSimulator {
 
     if (toCall > 0) {
       if (picked.key === "fold" && toCall > 0) return this.applyAction("ai", "fold");
-      if (picked.key === "raise" && this.aiStack > toCall + 2) return this.applyAction("ai", "raise");
+      if (picked.key === "jam") return this.applyAction("ai", "allin");
+      if ((picked.key === "raise-big" || picked.key === "raise") && this.aiStack > toCall + 2) return this.applyAction("ai", "pot");
+      if (picked.key === "raise-small" && this.aiStack > toCall + 2) return this.applyAction("ai", "half");
       return this.applyAction("ai", "check-call");
     }
 
-    if (picked.key === "bet-small") return this.applyAction("ai", "half");
+    if (picked.key === "bet-small") return this.applyAction("ai", "third");
+    if (picked.key === "bet-mid") return this.applyAction("ai", "half");
     if (picked.key === "bet-big" || picked.key === "raise") return this.applyAction("ai", "pot");
+    if (picked.key === "bet-over") return this.applyAction("ai", "overbet");
     return this.applyAction("ai", "check-call");
   }
 
@@ -222,11 +226,20 @@ export class HoldemSimulator {
     if (type === "check-call") {
       return this.passive(actor);
     }
+    if (type === "third") {
+      return this.aggressive(actor, Math.max(1, this.pot * 0.33));
+    }
     if (type === "half") {
       return this.aggressive(actor, Math.max(1, this.pot * 0.5));
     }
+    if (type === "two-thirds") {
+      return this.aggressive(actor, Math.max(1, this.pot * 0.66));
+    }
     if (type === "pot") {
       return this.aggressive(actor, Math.max(1, this.pot));
+    }
+    if (type === "overbet") {
+      return this.aggressive(actor, Math.max(1, this.pot * 1.25));
     }
     if (type === "raise") {
       return this.aggressive(actor, Math.max(2.5, this.pot * 0.72));

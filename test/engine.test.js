@@ -66,7 +66,10 @@ const recommendation = recommendStrategy({
   rng: mulberry32(11),
 });
 assert.equal(Math.round(recommendation.actions.reduce((sum, action) => sum + action.frequency, 0) * 100), 100);
-assert.ok(recommendation.actions[0].frequency > 0.35);
+assert.equal(recommendation.policySource.type, "preflop");
+assert.equal(recommendation.actions[0].key, "raise");
+assert.ok(recommendation.actions[0].frequency > 0.98);
+assert.ok(!recommendation.actions.some((action) => action.key === "call"));
 assert.ok(recommendation.sizing.options.some((option) => option.label === "2.2bb open"));
 assert.ok(recommendation.sizing.options.some((option) => option.label === "2.5bb open"));
 
@@ -118,7 +121,7 @@ assert.ok(flopCheckOption.sizing.options.some((option) => option.label === "75% 
 
 const betFrequency = (recommendation) =>
   recommendation.actions
-    .filter((action) => ["bet-small", "bet-big", "raise"].includes(action.key))
+    .filter((action) => ["bet-small", "bet-mid", "bet-big", "bet-over", "raise", "raise-small", "raise-big", "jam"].includes(action.key))
     .reduce((sum, action) => sum + action.frequency, 0);
 
 const dryBoardBlockerBluff = recommendStrategy({
@@ -168,7 +171,11 @@ const semiBluffRaise = recommendStrategy({
   iterations: 500,
   rng: mulberry32(19),
 });
-assert.ok(semiBluffRaise.actions.find((action) => action.key === "raise")?.frequency > 0.18);
+assert.ok(
+  semiBluffRaise.actions
+    .filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key))
+    .reduce((sum, action) => sum + action.frequency, 0) > 0.18,
+);
 
 const riverPolarSizing = recommendStrategy({
   hero: ["As", "Qs"],
