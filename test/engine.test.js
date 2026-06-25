@@ -103,6 +103,24 @@ const openOption = recommendStrategy({
 });
 assert.ok(openOption.actions.some((action) => action.key === "fold"));
 
+const aksFacingThreeBet = recommendStrategy({
+  hero: ["Ah", "Kh"],
+  board: [],
+  position: "BTN",
+  context: "facing-3bet",
+  tableSize: 6,
+  pot: 6,
+  toCall: 12,
+  stackBb: 100,
+  opponents: 1,
+  iterations: 300,
+  rng: mulberry32(21),
+});
+assert.equal(aksFacingThreeBet.policySource.type, "preflop");
+assert.equal(aksFacingThreeBet.actions[0].key, "raise");
+assert.ok((aksFacingThreeBet.actions.find((action) => action.key === "fold")?.frequency || 0) < 0.01);
+assert.ok((aksFacingThreeBet.actions.find((action) => action.key === "call")?.frequency || 0) > 0.2);
+
 const flopCheckOption = recommendStrategy({
   hero: ["As", "Qd"],
   board: ["Ah", "7c", "2s"],

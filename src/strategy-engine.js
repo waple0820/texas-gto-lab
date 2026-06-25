@@ -534,11 +534,15 @@ export function recommendStrategy({
     equity: equityResult.equity,
   });
   const heuristicActions =
-    metrics.toCall > 0
-      ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
-      : hasFreeCheckOption(context)
+    profile.street === "preflop"
+      ? hasFreeCheckOption(context)
         ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
-        : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
+        : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
+      : metrics.toCall > 0
+        ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
+        : hasFreeCheckOption(context)
+          ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
+          : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
   const trained = applyTrainedPolicy({
     actions: heuristicActions,
     board,
