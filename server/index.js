@@ -252,6 +252,7 @@ function makePlayer(name, type) {
     hole: [],
     review: [],
     lastAction: null,
+    aiTemperature: type === "ai" ? round(0.96 + Math.random() * 0.18, 2) : null,
   };
 }
 
@@ -709,7 +710,7 @@ function queueAiIfNeeded() {
     const current = getPlayer(table.turnId);
     if (current?.type !== "ai") return;
     const recommendation = recommendFor(current);
-    const picked = pickAction(recommendation.actions, Math.random, current.name.includes("Loose") ? 1.45 : 0.9);
+    const picked = pickAction(recommendation.actions, Math.random, current.aiTemperature || 1);
     let action = "check-call";
     if (toCallFor(current) > 0) {
       if (picked.key === "fold") action = "fold";
