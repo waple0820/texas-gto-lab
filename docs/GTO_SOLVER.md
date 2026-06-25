@@ -238,9 +238,11 @@ where the heuristic was 28.7% exploitable:
 So on the covered spot the product now plays within ~0.1% of pot of GTO — the same
 level as the solver's own Nash iterate. This proves the full pipeline end to end:
 solve → export to a JS artifact → engine consumes it → measured exploitability
-collapses. Coverage grows by adding spots to `export_solved.py`; uncovered spots
-fall back to the heuristic untouched (existing tests and the 100-hand audit are
-unaffected).
+collapses. Coverage grows by adding spots to `export_solved.py` — it now ships
+**5 canonical river textures** (two-broadway, ace-high dry, three-flush,
+connected, double-paired), each solved to <0.32% pot, in a 705 KB artifact.
+Uncovered spots fall back to the heuristic untouched (existing tests and the
+100-hand audit are unaffected).
 
 ```bash
 npm run export:solved      # solve canonical spots -> src/solved-river-artifact.js

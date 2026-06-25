@@ -44,7 +44,7 @@ def solve_spot(board_text, pot, stack, bet_sizes, iterations):
         strat = avg[node.index]  # [n_combos x n_actions]
         table = {}
         for i, (a, b) in enumerate(combos):
-            table[combo_key(a, b)] = [round(float(x), 4) for x in strat[i]]
+            table[combo_key(a, b)] = [round(float(x), 3) for x in strat[i]]
         nodes.append({
             "player": int(node.player),
             "toCall": round(float(getattr(node, "to_call_ctx", 0.0)), 3),
@@ -67,9 +67,14 @@ def main():
     parser.add_argument("--out", default=str(ROOT / "src" / "solved-river-artifact.js"))
     args = parser.parse_args()
 
-    # Canonical solved spots. Extend this list to widen GTO coverage.
+    # Canonical solved spots spanning common river textures. Extend to widen
+    # exact-GTO coverage in the product.
     specs = [
-        ("Qc Jd 9s 4h 2c", 10.0, 20.0, [0.75]),
+        ("Qc Jd 9s 4h 2c", 10.0, 20.0, [0.75]),  # two-broadway, semi-wet
+        ("As Kd 7c 3h 2s", 10.0, 20.0, [0.75]),  # ace-high dry
+        ("Ah Kh Qh 5d 2c", 10.0, 20.0, [0.75]),  # three-flush board
+        ("Td 9d 8c 7h 2s", 10.0, 20.0, [0.75]),  # connected / straighty
+        ("8s 8d Kc 4h 4s", 10.0, 20.0, [0.75]),  # double-paired
     ]
     spots = []
     for board_text, pot, stack, bets in specs:
