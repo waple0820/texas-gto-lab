@@ -1,12 +1,18 @@
 import {
+  allHandCodes,
   analyzeMadeHand,
   buildRangeWeights,
   calculateEquity,
+  cardRank,
+  cardSuit,
   clamp,
+  comboCountForCode,
   computeDecisionMetrics,
   pct,
+  RANK_VALUE,
   rangeCoverage,
   round,
+  scoreHandCode,
 } from "./poker-core.js";
 
 const POSITION_EDGE = {
@@ -54,6 +60,143 @@ function drawBonus(draws) {
 
 function texturePressure(texture) {
   return (texture.wetness || 0) * 0.09 + (texture.paired ? -0.025 : 0);
+}
+
+function comboWeightedRangePercentile(handCode, rangeWeights) {
+  const heroScore = scoreHandCode(handCode);
+  let total = 0;
+  let weaker = 0;
+  let tied = 0;
+
+  for (const code of allHandCodes()) {
+    const weight = Number(rangeWeights?.[code] || 0);
+    if (weight <= 0) continue;
+    const combos = comboCountForCode(code) * weight;
+    const score = scoreHandCode(code);
+    total += combos;
+    if (score < heroScore) weaker += combos;
+    else if (score === heroScore) tied += combos;
+  }
+
+  if (total <= 0) return clamp(heroScore / 100, 0, 1);
+  return clamp((weaker + tied * 0.5) / total, 0, 1);
+}
+
+function highCardValue(board = []) {
+  return Math.max(0, ...board.map((card) => RANK_VALUE[cardRank(card)] || 0));
+}
+
+function boardSuitCounts(board = []) {
+  return board.reduce((counts, card) => {
+    counts[cardSuit(card)] = (counts[cardSuit(card)] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function blockerScore(hero = [], board = []) {
+  if (!board.length) return 0;
+  const boardHigh = highCardValue(board);
+  const heroValues = hero.map((card) => RANK_VALUE[cardRank(card)] || 0);
+  const heroSuits = hero.map(cardSuit);
+  const suits = boardSuitCounts(board);
+  const flushSuit = Object.entries(suits).find(([, count]) => count >= 3)?.[0];
+
+  let score = 0;
+  if (heroValues.includes(14)) score += 0.055;
+  if (boardHigh && heroValues.includes(boardHigh)) score += 0.085;
+  if (heroValues.some((value) => value >= 12 && value > boardHigh - 2)) score += 0.035;
+  if (flushSuit && hero.some((card) => cardRank(card) === "A" && cardSuit(card) === flushSuit)) score += 0.09;
+  if (flushSuit && heroSuits.includes(flushSuit)) score += 0.035;
+  return clamp(score, 0, 0.22);
+}
+
+function rangeAdvantage({ board, context, position, profile, rangeInfo }) {
+  let advantage = 0.48;
+  const high = highCardValue(board);
+  const texture = profile.texture || {};
+  const aggressorContext = ["unopened", "single-raised", "three-bet-pot"].includes(context);
+
+  if (aggressorContext) advantage += 0.08;
+  if (context === "three-bet-pot") advantage += 0.08;
+  if (["BTN", "CO"].includes(position)) advantage += 0.035;
+  if (["SB", "BB"].includes(position)) advantage -= 0.025;
+  if ((rangeInfo?.percent || 0) <= 0.18) advantage += 0.055;
+  if ((rangeInfo?.percent || 0) >= 0.38) advantage -= 0.035;
+
+  if (board.length >= 3) {
+    if (high >= 13 && !texture.connected) advantage += 0.08;
+    if (high >= 12 && texture.paired) advantage += 0.045;
+    if (texture.monotone) advantage -= 0.075;
+    if (texture.connected) advantage -= 0.06;
+    if ((texture.wetness || 0) < 0.2) advantage += 0.035;
+  }
+
+  return clamp(advantage, 0.24, 0.78);
+}
+
+function rangeBetTarget({ profile, context, position, rangeModel }) {
+  if (profile.street === "preflop") return 0;
+  const texture = profile.texture || {};
+  let target = 0.34 + rangeModel.advantage * 0.36;
+  if (["single-raised", "three-bet-pot"].includes(context)) target += 0.08;
+  if (context === "three-bet-pot") target += 0.08;
+  if (["BTN", "CO"].includes(position)) target += 0.035;
+  if (texture.paired) target += 0.035;
+  if (texture.connected) target -= 0.06;
+  if (texture.monotone) target -= 0.08;
+  if ((texture.wetness || 0) < 0.22) target += 0.055;
+  if ((texture.wetness || 0) > 0.52) target -= 0.08;
+  return clamp(target, 0.18, 0.78);
+}
+
+function classifyRangeRole({ equity, profile, rangeModel }) {
+  const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
+  const draw = drawBonus(profile.draws);
+  const highRange = rangeModel.percentile >= 0.72;
+  const lowShowdown = equity < 0.42 && made < 0.18;
+
+  if (made >= 0.48 || equity >= 0.64) return "value";
+  if (draw >= 0.075) return "semi-bluff";
+  if (lowShowdown && (rangeModel.blockers >= 0.06 || rangeModel.advantage >= 0.58 || highRange)) return "blocker-bluff";
+  if (made >= 0.12 || equity >= 0.42) return "bluff-catcher";
+  return "range-air";
+}
+
+function roleLabel(role) {
+  return {
+    value: "价值下注",
+    "semi-bluff": "半诈唬",
+    "blocker-bluff": "阻断牌诈唬",
+    "bluff-catcher": "抓诈/摊牌价值",
+    "range-air": "低摊牌价值空气牌",
+  }[role] || role;
+}
+
+function buildRangeModel({ hero, board, rangeWeights, rangeInfo, profile, position, context, equity }) {
+  const handCode = profile.handCode;
+  const rangeWeight = Number(rangeWeights?.[handCode] || 0);
+  const percentile = comboWeightedRangePercentile(handCode, rangeWeights);
+  const blockers = blockerScore(hero, board);
+  const advantage = rangeAdvantage({ board, context, position, profile, rangeInfo });
+  const role = classifyRangeRole({
+    equity,
+    profile,
+    rangeModel: {
+      advantage,
+      blockers,
+      percentile,
+    },
+  });
+
+  return {
+    handCode,
+    rangeWeight,
+    percentile,
+    blockers,
+    advantage,
+    role,
+    roleLabel: roleLabel(role),
+  };
 }
 
 function hasFreeCheckOption(context) {
@@ -187,17 +330,19 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
   return makeSizing(primary, "常规混合尺度，保留小注、中注、大注和极化 overbet", postflopOptions);
 }
 
-function strategyFacingBet({ equity, metrics, profile, position, context }) {
+function strategyFacingBet({ equity, metrics, profile, position, context, rangeModel }) {
   const edge = equity - metrics.potOdds;
   const draws = profile.draws;
   const semiBluff = drawBonus(draws);
   const nutted = MADE_HAND_WEIGHT[profile.madeName] || 0;
   const positionBoost = POSITION_EDGE[position] || 0;
   const pressure = context === "facing-raise" ? 0.085 : context === "facing-3bet" ? 0.07 : 0;
+  const blockerBluff = clamp((rangeModel.blockers + Math.max(0, rangeModel.advantage - 0.5) * 0.34) * (1 - nutted * 0.75), 0, 0.18);
+  const bluffCatcher = clamp((rangeModel.percentile - 0.42) * 0.18 + (nutted >= 0.12 ? 0.08 : 0), 0, 0.18);
 
-  let fold = clamp((metrics.potOdds + 0.055 + pressure - equity) * 3.15 - semiBluff, 0.02, 0.9);
-  let raise = clamp((equity - 0.58) * 1.45 + semiBluff * 0.9 + nutted * 0.22 + positionBoost, 0, 0.74);
-  let call = clamp(1 - fold - raise, 0.04, 0.92);
+  let raise = clamp((equity - 0.57) * 1.25 + semiBluff * 1.05 + blockerBluff + nutted * 0.24 + positionBoost, 0.015, 0.72);
+  let call = clamp((edge + 0.16 - pressure) * 1.35 + bluffCatcher + nutted * 0.1 + semiBluff * 0.32, 0.035, 0.9);
+  let fold = clamp(1 - call - raise, 0.02, 0.92);
 
   if (metrics.spr < 2.3 && equity > 0.52) {
     raise += 0.22;
@@ -206,7 +351,12 @@ function strategyFacingBet({ equity, metrics, profile, position, context }) {
   }
   if (equity < metrics.potOdds - 0.08 && !draws.flushDraw && !draws.straightDraw) {
     fold += 0.18;
-    raise *= 0.55;
+    raise *= rangeModel.blockers > 0.07 ? 0.82 : 0.55;
+  }
+  if (rangeModel.role === "blocker-bluff" && metrics.spr > 3) {
+    raise += 0.08;
+    call -= 0.03;
+    fold -= 0.05;
   }
 
   return normalizeActions([
@@ -216,7 +366,7 @@ function strategyFacingBet({ equity, metrics, profile, position, context }) {
   ]);
 }
 
-function strategyOpenAction({ equity, metrics, profile, position, context }) {
+function strategyOpenAction({ equity, metrics, profile, position, context, rangeModel }) {
   const draws = profile.draws;
   const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
   const positionBoost = POSITION_EDGE[position] || 0;
@@ -236,10 +386,25 @@ function strategyOpenAction({ equity, metrics, profile, position, context }) {
     ]);
   }
 
-  const value = clamp((equity - 0.47) * 1.35 + made * 0.26, 0, 0.82);
-  const bluff = clamp(drawBonus(draws) + pressure + positionBoost + initiativeBoost, 0.015, 0.28);
-  const bigBet = clamp((equity - 0.64) * 1.15 + pressure + made * 0.1, 0, 0.46);
-  const smallBet = clamp(value + bluff - bigBet * 0.45, 0.04, 0.88);
+  const rangeTarget = rangeBetTarget({ profile, context, position, rangeModel });
+  const semiBluff = drawBonus(draws);
+  const lowShowdown = equity < 0.42 && made < 0.18;
+  const value = clamp((equity - 0.48) * 1.25 + made * 0.34 + Math.max(0, rangeModel.percentile - 0.62) * 0.18, 0, 0.86);
+  const rangeBluff = clamp(
+    semiBluff * 1.08 +
+      rangeModel.blockers * 0.95 +
+      Math.max(0, rangeModel.advantage - 0.48) * (lowShowdown ? 0.58 : 0.24) +
+      rangeTarget * (lowShowdown ? 0.22 : 0.08) +
+      pressure +
+      positionBoost * 0.55 +
+      initiativeBoost,
+    0.02,
+    0.46,
+  );
+  const protection = clamp(made > 0 && equity < 0.55 ? 0.07 + rangeTarget * 0.1 : 0, 0, 0.2);
+  const bigBet = clamp((equity - 0.63) * 1.05 + made * 0.16 + semiBluff * 0.36 + Math.max(0, rangeModel.blockers - 0.08) * 0.8 + pressure, 0.015, 0.5);
+  const targetBet = clamp(rangeTarget * 0.34 + value * 0.52 + rangeBluff * 0.82 + protection, 0.055, 0.9);
+  const smallBet = clamp(targetBet - bigBet * 0.58, 0.035, 0.88);
   const check = clamp(1 - smallBet - bigBet, 0.05, 0.9);
 
   return normalizeActions([
@@ -249,9 +414,9 @@ function strategyOpenAction({ equity, metrics, profile, position, context }) {
   ]);
 }
 
-function strategyCheckOption({ equity, metrics, profile, position }) {
+function strategyCheckOption({ equity, metrics, profile, position, rangeModel }) {
   if (profile.street !== "preflop") {
-    return strategyOpenAction({ equity, metrics, profile, position, context: "single-raised" });
+    return strategyOpenAction({ equity, metrics, profile, position, context: "single-raised", rangeModel });
   }
 
   const positionBoost = POSITION_EDGE[position] || 0;
@@ -267,20 +432,23 @@ function strategyCheckOption({ equity, metrics, profile, position }) {
   ]);
 }
 
-function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context }) {
+function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel }) {
   const reasons = [
     `权益 ${pct(equityResult.equity, 1)} / 胜率 ${pct(equityResult.win, 1)}`,
     metrics.toCall > 0 ? `底池赔率 ${pct(metrics.potOdds, 1)}` : `SPR ${round(metrics.spr, 1)}`,
     `对手范围 ${round(rangeInfo.percent * 100, 1)}% (${rangeInfo.combos} combos)`,
+    `范围角色 ${rangeModel.roleLabel} / 分位 ${pct(rangeModel.percentile, 0)}`,
     profile.street === "preflop" ? `起手牌 ${profile.handCode}` : `${profile.description}`,
     `位置 ${position} / ${context}`,
   ];
 
   if (profile.draws.flushDraw) reasons.push("同花听牌");
   if (profile.draws.openEnded) reasons.push("开放顺听牌");
+  if (rangeModel.blockers >= 0.07) reasons.push("阻断关键强牌");
+  if (rangeModel.advantage >= 0.58 && profile.street !== "preflop") reasons.push("进攻方范围优势");
   if (profile.texture.label && profile.street !== "preflop") reasons.push(`牌面 ${profile.texture.label}`);
 
-  return reasons.slice(0, 7);
+  return reasons.slice(0, 8);
 }
 
 export function recommendStrategy({
@@ -322,12 +490,23 @@ export function recommendStrategy({
     toCall,
     effectiveStack: stackBb,
   });
+  const rangeInfo = rangeCoverage(activeRange);
+  const rangeModel = buildRangeModel({
+    hero,
+    board,
+    rangeWeights: activeRange,
+    rangeInfo,
+    profile,
+    position,
+    context,
+    equity: equityResult.equity,
+  });
   const actions =
     metrics.toCall > 0
-      ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context })
+      ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
       : hasFreeCheckOption(context)
-        ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position })
-      : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context });
+        ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
+      : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
   const sizing = chooseSizing({
     board,
     metrics,
@@ -337,7 +516,6 @@ export function recommendStrategy({
     context,
     position,
   });
-  const rangeInfo = rangeCoverage(activeRange);
 
   return {
     actions,
@@ -347,6 +525,7 @@ export function recommendStrategy({
     metrics,
     range: activeRange,
     rangeInfo,
+    rangeModel,
     reasons: buildReasons({
       equityResult,
       metrics,
@@ -354,6 +533,7 @@ export function recommendStrategy({
       rangeInfo,
       position,
       context,
+      rangeModel,
     }),
   };
 }

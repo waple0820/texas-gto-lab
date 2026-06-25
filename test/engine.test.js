@@ -115,6 +115,57 @@ assert.ok(!flopCheckOption.actions.some((action) => action.key === "fold"));
 assert.ok(flopCheckOption.sizing.options.some((option) => option.label === "33% pot"));
 assert.ok(flopCheckOption.sizing.options.some((option) => option.label === "75% pot"));
 
+const betFrequency = (recommendation) =>
+  recommendation.actions
+    .filter((action) => ["bet-small", "bet-big", "raise"].includes(action.key))
+    .reduce((sum, action) => sum + action.frequency, 0);
+
+const dryBoardBlockerBluff = recommendStrategy({
+  hero: ["Ah", "5c"],
+  board: ["Kd", "8s", "2h"],
+  position: "BTN",
+  context: "single-raised",
+  pot: 6,
+  toCall: 0,
+  stackBb: 95,
+  rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "single-raised", tableSize: 2 }),
+  iterations: 500,
+  rng: mulberry32(17),
+});
+assert.equal(dryBoardBlockerBluff.rangeModel.role, "blocker-bluff");
+assert.ok(betFrequency(dryBoardBlockerBluff) > 0.32, `blocker bluff frequency ${betFrequency(dryBoardBlockerBluff)}`);
+assert.ok(dryBoardBlockerBluff.reasons.some((reason) => reason.includes("范围角色")));
+assert.ok(dryBoardBlockerBluff.reasons.some((reason) => reason.includes("阻断")));
+
+const wetBoardLowAir = recommendStrategy({
+  hero: ["5h", "2c"],
+  board: ["Qd", "Jd", "Tc"],
+  position: "BTN",
+  context: "single-raised",
+  pot: 6,
+  toCall: 0,
+  stackBb: 95,
+  rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "single-raised", tableSize: 2 }),
+  iterations: 500,
+  rng: mulberry32(18),
+});
+assert.equal(wetBoardLowAir.actions[0].key, "check");
+assert.ok(betFrequency(wetBoardLowAir) < 0.5, `wet low-air overbluff ${betFrequency(wetBoardLowAir)}`);
+
+const semiBluffRaise = recommendStrategy({
+  hero: ["Ah", "Qh"],
+  board: ["Kh", "8h", "2c"],
+  position: "BTN",
+  context: "facing-bet",
+  pot: 8,
+  toCall: 4,
+  stackBb: 92,
+  rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "facing-bet", tableSize: 2 }),
+  iterations: 500,
+  rng: mulberry32(19),
+});
+assert.ok(semiBluffRaise.actions.find((action) => action.key === "raise")?.frequency > 0.18);
+
 const riverPolarSizing = recommendStrategy({
   hero: ["As", "Qs"],
   board: ["Ks", "Js", "Ts", "2d", "7c"],
