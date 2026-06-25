@@ -289,6 +289,12 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    balance, which trips the per-hand "strong ⇒ bet" strategy audit. Activating it
    waits on **facing-node distillation** + reconciling the audit with GTO-style
    checking. `npm run eval:generalization`.
+
+   *Facing-node groundwork:* `multiraise_tree.py` builds a river tree with the
+   full `[fold, call, raise-small, raise-big, jam]` facing set (one re-raise then
+   jam, to cap depth) and solves it via the existing CFR engine
+   (`RiverSolver(..., tree=...)`). It converges to ~0.28% pot — the foundation for
+   distilling facing decisions so the distilled policy can be turned on end to end.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 

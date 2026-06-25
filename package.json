@@ -12,7 +12,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node test/engine.test.js && node test/strategy-audit.test.js",
     "test:strategy-audit": "node test/strategy-audit.test.js",
-    "test:solver": "python3 scripts/solver/river_cfr.py --self-test && python3 scripts/solver/turn_cfr.py --self-test && python3 scripts/solver/solver_torch.py --self-test && python3 scripts/solver/turn_torch.py --self-test",
+    "test:solver": "python3 scripts/solver/river_cfr.py --self-test && python3 scripts/solver/turn_cfr.py --self-test && python3 scripts/solver/solver_torch.py --self-test && python3 scripts/solver/turn_torch.py --self-test && python3 scripts/solver/multiraise_tree.py --self-test",
     "train:policy": "python3 scripts/train-policy.py",
     "solve:river": "python3 scripts/solver/river_cfr.py",
     "solve:turn": "python3 scripts/solver/turn_cfr.py",

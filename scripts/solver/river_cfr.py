@@ -292,7 +292,7 @@ def conflict_mask(combos_a: list[tuple[int, int]], combos_b: list[tuple[int, int
 
 class RiverSolver:
     def __init__(self, board: list[int], range_oop: Range, range_ip: Range,
-                 pot: float, stack: float, bet_sizes: list[float]):
+                 pot: float, stack: float, bet_sizes: list[float], tree: Node = None):
         self.board = board
         self.pot = pot
         self.stack = stack
@@ -306,7 +306,7 @@ class RiverSolver:
         so = range_oop.strength[:, None]
         si = range_ip.strength[None, :]
         self.sign = np.sign(so - si).astype(np.float64) * self.valid
-        self.root = build_tree(pot, stack, bet_sizes)
+        self.root = tree if tree is not None else build_tree(pot, stack, bet_sizes)
         self.nodes = index_nodes(self.root)
         n_nodes = len(self.nodes)
         # per decision node: regret + strategy-sum sized [combos_for_player, n_actions]
