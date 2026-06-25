@@ -183,17 +183,54 @@ npm run test:solver-flop   # ~25s convergence-trend guard (separate from test:so
 `test:solver-flop` is kept out of the bundled `test:solver` because each iteration
 is tree-bound (the river is enumerated), so it runs longer than the exact solvers.
 
+## Stage 5 — How far is the live engine from GTO? (measured)
+
+`scripts/solver/engine_exploitability.py` answers the project's original question
+with a concrete number: it measures the **shipped strategy engine's exact
+exploitability** vs GTO on a river spot.
+
+Method (no new approximation):
+1. Build a river subgame and solve it with CFR+; its measured exploitability
+   (~0) confirms the tree is sound.
+2. Query the JS engine (`recommendStrategy`) for every (decision node, combo) via
+   `engine_dump.mjs` and map its bucketed actions onto the tree.
+3. Feed that fixed engine strategy into the **same exact best-response routine**
+   the solvers use (`RiverSolver.exploitability`). The result is the engine's
+   exact exploitability, in % of pot.
+
+**Result** (board `Qc Jd 9s 4h 2c`, pot 10, stack 20, full 1081-combo range):
+
+| strategy | exact exploitability |
+|----------|---------------------:|
+| GTO (Nash) | 0.18% pot (sanity ~0) |
+| **shipped engine** | **28.7% pot (287 mbb/pot)** |
+
+So on this spot a perfect opponent beats the current engine for ~29% of the pot —
+a large, concrete gap that quantifies how far the heuristic is from GTO and gives
+the baseline the artifact integration drives down.
+
+> Consistency note: the engine always evaluates equity vs the *full* range, so the
+> measurement must use the full range for both players. An earlier reduced-range
+> run reported a misleading 71% because it told the engine its opponent was
+> full-range while the game used only the top combos — the engine then overvalued
+> hands and over-raised. `--max-combos 0` (full range) is the correct mode.
+
+```bash
+npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20
+```
+
 ## Roadmap
 
 1. **River subgame solver + exact exploitability** ✅
 2. **Turn → river two-street solve (chance node + river subgames)** ✅
 3. **GPU torch port — full-range river *and* turn solves on the dual-5090 host** ✅
 4. **Flop three-street solve (turn-sampled, river-exact MCCFR)** ✅
-5. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
-   exploitability to single digits; multiple bet sizes.
+5. **Measure the shipped engine's exact exploitability vs GTO (~29% pot)** ✅
 6. Export solved strategies into the JS artifact contract
-   (`src/trained-policy-artifact.js`); measure the deployed policy's exploitability
-   against the solved baseline and retire hand-written safeguards as it improves.
+   (`src/trained-policy-artifact.js`); re-measure the deployed policy's
+   exploitability and retire hand-written safeguards as it falls.
+7. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
+   exploitability to single digits; multiple bet sizes.
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.

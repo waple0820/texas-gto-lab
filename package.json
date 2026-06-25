@@ -19,7 +19,8 @@
     "solve:gpu": "python3 scripts/solver/solver_torch.py",
     "solve:gpu-turn": "python3 scripts/solver/turn_torch.py",
     "solve:flop": "python3 scripts/solver/flop_mccfr.py",
-    "test:solver-flop": "python3 scripts/solver/flop_mccfr.py --self-test"
+    "test:solver-flop": "python3 scripts/solver/flop_mccfr.py --self-test",
+    "measure:engine": "python3 scripts/solver/engine_exploitability.py"
   },
   "dependencies": {
     "lucide": "^1.21.0",

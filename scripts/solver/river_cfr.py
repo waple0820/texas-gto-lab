@@ -181,8 +181,12 @@ def build_tree(pot: float, stack: float, bet_sizes: list[float]) -> Node:
         )
         raise_node = Node(kind="decision", player=bettor, actions=["fold", "call"],
                           children=[raise_fold, raise_call])
+        raise_node.pot_ctx = pot + allin + inv_bettor
+        raise_node.to_call_ctx = allin - inv_bettor
         node = Node(kind="decision", player=actor, actions=["fold", "call", "raise"],
                     children=[fold_node, showdown(inv_bettor), raise_node])
+        node.pot_ctx = pot + inv_bettor + inv_caller
+        node.to_call_ctx = bet
         return node
 
     # IP after OOP checks
@@ -193,7 +197,10 @@ def build_tree(pot: float, stack: float, bet_sizes: list[float]) -> Node:
             bet = pot * frac
             actions.append(f"bet{frac:g}")
             children.append(facing_bet(OOP, bet, 0.0))
-        return Node(kind="decision", player=IP, actions=actions, children=children)
+        node = Node(kind="decision", player=IP, actions=actions, children=children)
+        node.pot_ctx = pot
+        node.to_call_ctx = 0.0
+        return node
 
     # IP after OOP bets
     def ip_after_bet(bet: float) -> Node:
@@ -207,6 +214,8 @@ def build_tree(pot: float, stack: float, bet_sizes: list[float]) -> Node:
         actions.append(f"bet{frac:g}")
         children.append(ip_after_bet(bet))
     root = Node(kind="decision", player=OOP, actions=actions, children=children)
+    root.pot_ctx = pot
+    root.to_call_ctx = 0.0
     return root
 
 
