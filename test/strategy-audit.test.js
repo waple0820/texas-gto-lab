@@ -133,6 +133,7 @@ function auditRecommendation({ simulator, actor, rng }) {
     rangeWeights,
     iterations: ITERATIONS,
     rng,
+    lineProfile: simulator.lineProfileForActor(actor, toCall),
   });
   const picked = pickAction(recommendation.actions, rng, 1);
   const actionId = actionIdForPick(picked, recommendation, toCall);

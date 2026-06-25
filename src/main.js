@@ -752,6 +752,7 @@ function captureHeroDecision(type) {
     opponents: 1,
     rangeWeights,
     iterations: 700,
+    lineProfile: simulator.lineProfileForActor("hero", toCall),
   });
   const chosenKey = actionKeyForReview(type, toCall, simulator.street);
   const chosenFrequency = reviewFrequency(recommendation.actions, chosenKey);

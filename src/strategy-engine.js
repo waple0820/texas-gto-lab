@@ -430,6 +430,46 @@ function strategyFacingBet({ equity, metrics, profile, position, context, rangeM
   ]);
 }
 
+function raiseFrequency(actions) {
+  return actions
+    .filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key))
+    .reduce((sum, action) => sum + action.frequency, 0);
+}
+
+function applyLinePressure(actions, { equity, metrics, profile, rangeModel, lineProfile }) {
+  if (!lineProfile?.weakProbe || metrics.toCall <= 0 || profile.street === "preflop") return actions;
+  const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
+  const lowShowdown = made < 0.12 && equity < Math.max(0.32, metrics.potOdds + 0.12);
+  const bustedRiver = profile.street === "river" && lowShowdown;
+  const bluffCandidate = bustedRiver || rangeModel.role === "blocker-bluff" || rangeModel.blockers >= 0.045 || drawBonus(profile.draws) > 0.04;
+  if (!bluffCandidate) return actions;
+
+  const betFraction = Number(lineProfile.currentBetFraction || 0);
+  const passiveScore = clamp(Number(lineProfile.passiveScore ?? 0.5), 0, 1);
+  const currentRaise = raiseFrequency(actions);
+  const targetRaise = clamp(
+    0.12 +
+      (0.36 - Math.min(0.36, betFraction)) * 0.32 +
+      passiveScore * 0.1 +
+      (bustedRiver ? 0.06 : 0) +
+      rangeModel.blockers * 0.36,
+    0.12,
+    0.32,
+  );
+  const lift = clamp(targetRaise - currentRaise, 0, 0.24);
+  if (lift <= 0.002) return actions;
+
+  const foldShare = 0.62;
+  const next = actions.map((action) => ({ ...action, weight: action.frequency }));
+  for (const action of next) {
+    if (action.key === "fold") action.weight = Math.max(0.01, action.weight - lift * foldShare);
+    if (action.key === "call") action.weight = Math.max(0.01, action.weight - lift * (1 - foldShare));
+    if (action.key === "raise-small") action.weight += lift * 0.72;
+    if (action.key === "raise-big") action.weight += lift * 0.28;
+  }
+  return normalizeActions(next);
+}
+
 function strategyOpenAction({ equity, metrics, profile, position, context, rangeModel }) {
   const draws = profile.draws;
   const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
@@ -502,7 +542,7 @@ function strategyCheckOption({ equity, metrics, profile, position, rangeModel })
   });
 }
 
-function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel, policySource }) {
+function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel, policySource, lineProfile }) {
   const reasons = [
     `权益 ${pct(equityResult.equity, 1)} / 胜率 ${pct(equityResult.win, 1)}`,
     metrics.toCall > 0 ? `底池赔率 ${pct(metrics.potOdds, 1)}` : `SPR ${round(metrics.spr, 1)}`,
@@ -518,6 +558,7 @@ function buildReasons({ equityResult, metrics, profile, rangeInfo, position, con
   if (profile.draws.openEnded) reasons.push("开放顺听牌");
   if (rangeModel.blockers >= 0.07) reasons.push("阻断关键强牌");
   if (rangeModel.advantage >= 0.58 && profile.street !== "preflop") reasons.push("进攻方范围优势");
+  if (lineProfile?.weakProbe) reasons.push("对手弱线小注，可保留加注诈唬");
   if (profile.texture.label && profile.street !== "preflop") reasons.push(`牌面 ${profile.texture.label}`);
 
   return reasons.slice(0, 8);
@@ -537,6 +578,7 @@ export function recommendStrategy({
   rangeWeights,
   iterations = 1200,
   rng = Math.random,
+  lineProfile = null,
 } = {}) {
   const activeRange =
     rangeWeights ||
@@ -605,7 +647,13 @@ export function recommendStrategy({
     position,
     context,
   });
-  const actions = trained?.actions || heuristicActions;
+  const actions = applyLinePressure(trained?.actions || heuristicActions, {
+    equity: equityResult.equity,
+    metrics,
+    profile,
+    rangeModel,
+    lineProfile,
+  });
   const policySource = trained
     ? {
         type: "trained",
@@ -638,6 +686,7 @@ export function recommendStrategy({
     rangeInfo,
     rangeModel,
     equityHistogram,
+    lineProfile,
     policySource,
     reasons: buildReasons({
       equityResult,
@@ -648,6 +697,7 @@ export function recommendStrategy({
       context,
       rangeModel,
       policySource,
+      lineProfile,
     }),
   };
 }
