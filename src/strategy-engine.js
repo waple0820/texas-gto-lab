@@ -19,6 +19,8 @@ import { PREFLOP_POLICY_VERSION, preflopStrategyActions } from "./preflop-policy
 import { applyTrainedPolicy } from "./trained-policy-runtime.js";
 import { lookupSolvedActions } from "./solved-policy.js";
 import { solvedRiverArtifact } from "./solved-river-artifact.js";
+import { distilledOpenActions } from "./distilled-policy.js";
+import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
 
 const POSITION_EDGE = {
   UTG: -0.05,
@@ -665,10 +667,25 @@ export function recommendStrategy({
     pot: metrics.pot,
     hero,
   });
-  const actions = solvedActions || blendedActions;
+  // Distilled GTO (generalizes to unseen boards) for river open decisions when no
+  // exact solved table matches.
+  const distilledActions = solvedActions
+    ? null
+    : distilledOpenActions({
+        hero,
+        board,
+        equity: equityResult.equity,
+        equityHistogram,
+        profile,
+        metrics,
+        position,
+      });
+  const actions = solvedActions || distilledActions || blendedActions;
   const policySource = solvedActions
     ? { type: "solved", version: solvedRiverArtifact.version }
-    : trained
+    : distilledActions
+      ? { type: "distilled", version: distilledPolicyArtifact.version }
+      : trained
       ? {
           type: "trained",
           version: trained.artifact.version,
