@@ -10,7 +10,8 @@
     "dev:stop": "tmux kill-session -t texas-gto-lab",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node test/engine.test.js"
+    "test": "node test/engine.test.js",
+    "train:policy": "python3 scripts/train-policy.py"
   },
   "dependencies": {
     "lucide": "^1.21.0",

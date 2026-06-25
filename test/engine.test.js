@@ -13,6 +13,7 @@ import {
 } from "../src/poker-core.js";
 import { recommendStrategy } from "../src/strategy-engine.js";
 import { HoldemSimulator } from "../src/simulator.js";
+import { trainedPolicyArtifact } from "../src/trained-policy-artifact.js";
 
 const deck = makeDeck();
 assert.equal(deck.length, 52);
@@ -132,9 +133,12 @@ const dryBoardBlockerBluff = recommendStrategy({
   iterations: 500,
   rng: mulberry32(17),
 });
+assert.equal(trainedPolicyArtifact.passed, true);
+assert.equal(dryBoardBlockerBluff.policySource.type, "trained");
 assert.equal(dryBoardBlockerBluff.rangeModel.role, "blocker-bluff");
-assert.ok(betFrequency(dryBoardBlockerBluff) > 0.32, `blocker bluff frequency ${betFrequency(dryBoardBlockerBluff)}`);
+assert.ok(betFrequency(dryBoardBlockerBluff) > 0.42, `blocker bluff frequency ${betFrequency(dryBoardBlockerBluff)}`);
 assert.ok(dryBoardBlockerBluff.reasons.some((reason) => reason.includes("范围角色")));
+assert.ok(dryBoardBlockerBluff.reasons.some((reason) => reason.includes("训练策略")));
 assert.ok(dryBoardBlockerBluff.reasons.some((reason) => reason.includes("阻断")));
 
 const wetBoardLowAir = recommendStrategy({

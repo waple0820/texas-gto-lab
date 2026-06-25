@@ -14,6 +14,7 @@ import {
   round,
   scoreHandCode,
 } from "./poker-core.js";
+import { applyTrainedPolicy } from "./trained-policy-runtime.js";
 
 const POSITION_EDGE = {
   UTG: -0.05,
@@ -432,15 +433,16 @@ function strategyCheckOption({ equity, metrics, profile, position, rangeModel })
   ]);
 }
 
-function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel }) {
+function buildReasons({ equityResult, metrics, profile, rangeInfo, position, context, rangeModel, policySource }) {
   const reasons = [
     `权益 ${pct(equityResult.equity, 1)} / 胜率 ${pct(equityResult.win, 1)}`,
     metrics.toCall > 0 ? `底池赔率 ${pct(metrics.potOdds, 1)}` : `SPR ${round(metrics.spr, 1)}`,
     `对手范围 ${round(rangeInfo.percent * 100, 1)}% (${rangeInfo.combos} combos)`,
     `范围角色 ${rangeModel.roleLabel} / 分位 ${pct(rangeModel.percentile, 0)}`,
+    policySource.type === "trained" ? `训练策略 ${policySource.version}` : null,
     profile.street === "preflop" ? `起手牌 ${profile.handCode}` : `${profile.description}`,
     `位置 ${position} / ${context}`,
-  ];
+  ].filter(Boolean);
 
   if (profile.draws.flushDraw) reasons.push("同花听牌");
   if (profile.draws.openEnded) reasons.push("开放顺听牌");
@@ -501,12 +503,33 @@ export function recommendStrategy({
     context,
     equity: equityResult.equity,
   });
-  const actions =
+  const heuristicActions =
     metrics.toCall > 0
       ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
       : hasFreeCheckOption(context)
         ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
       : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
+  const trained = applyTrainedPolicy({
+    actions: heuristicActions,
+    board,
+    equity: equityResult.equity,
+    metrics,
+    profile,
+    rangeModel,
+    rangeInfo,
+    position,
+    context,
+  });
+  const actions = trained?.actions || heuristicActions;
+  const policySource = trained
+    ? {
+        type: "trained",
+        version: trained.artifact.version,
+        artifactId: trained.artifact.artifactId,
+        blend: trained.artifact.blend,
+        validation: trained.artifact.validation,
+      }
+    : { type: "heuristic", version: "range-role-v1" };
   const sizing = chooseSizing({
     board,
     metrics,
@@ -526,6 +549,7 @@ export function recommendStrategy({
     range: activeRange,
     rangeInfo,
     rangeModel,
+    policySource,
     reasons: buildReasons({
       equityResult,
       metrics,
@@ -534,6 +558,7 @@ export function recommendStrategy({
       position,
       context,
       rangeModel,
+      policySource,
     }),
   };
 }
