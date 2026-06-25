@@ -216,7 +216,6 @@ app.innerHTML = `
                 <div class="mp-event" id="mp-event"></div>
                 <div class="mp-ready-board" id="mp-ready-board"></div>
                 <button class="mp-table-ready" id="mp-table-ready">举手准备</button>
-                <div class="mp-showdown-cards" id="mp-showdown-cards"></div>
               </div>
               <div class="mp-floating-action">
                 <div class="mp-floating-head">
@@ -245,6 +244,13 @@ app.innerHTML = `
               <button id="mp-copy-link">复制邀请链接</button>
             </div>
             <div class="sim-actions" id="mp-actions"></div>
+            <div class="showdown-shell" id="mp-showdown-shell" hidden>
+              <div class="subhead">
+                <strong>摊牌</strong>
+                <span id="mp-showdown-count">0 hands</span>
+              </div>
+              <div class="mp-showdown-cards" id="mp-showdown-cards"></div>
+            </div>
             <div class="chat-shell">
               <div class="subhead">
                 <strong>聊天室</strong>
@@ -1094,15 +1100,21 @@ function renderMpReadyBoard(state) {
 }
 
 function renderMpShowdownCards(state) {
+  const shell = $("#mp-showdown-shell");
   if (state?.phase !== "showdown") {
+    shell.hidden = true;
+    $("#mp-showdown-count").textContent = "0 hands";
     $("#mp-showdown-cards").innerHTML = "";
     return;
   }
   const shownPlayers = (state.players || []).filter((player) => player.hole?.length);
+  $("#mp-showdown-count").textContent = `${shownPlayers.length} hands`;
   if (!shownPlayers.length) {
+    shell.hidden = true;
     $("#mp-showdown-cards").innerHTML = "";
     return;
   }
+  shell.hidden = false;
   $("#mp-showdown-cards").innerHTML = shownPlayers
     .map(
       (player) => `
