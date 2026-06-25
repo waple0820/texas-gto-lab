@@ -47,6 +47,12 @@ npm test
 npm run build
 ```
 
+`npm test` also runs a deterministic 100-hand heads-up strategy audit and writes the latest decision log to `artifacts/strategy-audit-latest.json`. To run only that audit:
+
+```bash
+npm run test:strategy-audit
+```
+
 ## Notes
 
 The engine uses `pokersolver` for 5-7 card hand evaluation and Monte Carlo sampling for equity. The strategy layer uses a table-driven preflop policy plus a compact self-play regret postflop artifact for practical mixed frequencies from equity, pot odds, SPR, draw texture, range pressure, position, and sizing buckets. It is still not a full no-limit solver; the runtime is designed so deeper CFR/solver exports can replace the current artifact contract later.
