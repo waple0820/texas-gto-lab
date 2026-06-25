@@ -126,6 +126,18 @@ npm run solve:gpu -- --device cuda --dtype float32 --iterations 2000 \
   --board "Kh 9d 4s 2c 7h"
 ```
 
+`turn_torch.py` extends the GPU port to the **two-street** game: it reuses
+`turn_cfr`'s exact tree + sign/runout precompute and runs CFR+/best-response in
+torch. Self-test asserts torch (CPU, float64) matches `turn_cfr` exploitability
+within 0.1% on a small case. On the 5090 host a **full-range** turn solve (all
+1128 combos — far beyond the CPU solver's ~120-combo limit) reaches 0.909% pot
+exploitability (still descending) in ~97s.
+
+```bash
+npm run solve:gpu-turn -- --device cuda --dtype float32 --max-combos 0 \
+  --board "Kh 9d 4s 2c" --iterations 800
+```
+
 The 5090 host runs the solver from a torch venv
 (`/home/wf/apps/texas-gto-lab-train/.venv-policy`); the repo is rsynced there.
 
@@ -133,7 +145,7 @@ The 5090 host runs the solver from a torch venv
 
 1. **River subgame solver + exact exploitability** ✅
 2. **Turn → river two-street solve (chance node + river subgames)** ✅
-3. **GPU torch port (full-range solves on the dual-5090 host)** ✅
+3. **GPU torch port — full-range river *and* turn solves on the dual-5090 host** ✅
 4. Flop street via GPU sampling (MCCFR) — full three-street enumeration is ~10^5
    tree nodes, so the flop chance layers are sampled while keeping exact
    best-response measurement.
