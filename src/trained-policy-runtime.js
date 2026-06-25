@@ -24,6 +24,8 @@ const POSITION_SIGNAL = {
   BB: 0.3,
 };
 
+const EQUITY_BUCKET_NAMES = Array.from({ length: 10 }, (_, index) => `range_eq_${index * 10}_${index * 10 + 10}`);
+
 function drawStrength(draws = {}) {
   return clamp(
     (draws.flushDraw ? 0.13 : 0) +
@@ -40,10 +42,31 @@ function contextAggressor(context) {
   return ["unopened", "single-raised", "three-bet-pot"].includes(context) ? 1 : 0;
 }
 
-function featureMap({ equity, metrics, profile, rangeModel, rangeInfo, position, context }) {
+function fallbackHistogram(equity) {
+  const buckets = Array.from({ length: EQUITY_BUCKET_NAMES.length }, () => 0);
+  const center = clamp(equity, 0, 0.999) * EQUITY_BUCKET_NAMES.length;
+  for (let index = 0; index < buckets.length; index += 1) {
+    buckets[index] = Math.max(0.02, 1 - Math.abs(index + 0.5 - center) / 2.2);
+  }
+  const total = buckets.reduce((sum, value) => sum + value, 0) || 1;
+  return buckets.map((value) => value / total);
+}
+
+function normalizeHistogram(equityHistogram, equity) {
+  if (!Array.isArray(equityHistogram) || equityHistogram.length !== EQUITY_BUCKET_NAMES.length) {
+    return fallbackHistogram(equity);
+  }
+  const clean = equityHistogram.map((value) => clamp(Number(value) || 0, 0, 1));
+  const total = clean.reduce((sum, value) => sum + value, 0);
+  if (total <= 1e-8) return fallbackHistogram(equity);
+  return clean.map((value) => value / total);
+}
+
+function featureMap({ equity, equityHistogram, metrics, profile, rangeModel, rangeInfo, position, context }) {
   const texture = profile.texture || {};
   const street = profile.street || "preflop";
-  return {
+  const histogram = normalizeHistogram(equityHistogram, equity);
+  const features = {
     equity: clamp(equity, 0, 1),
     pot_odds: clamp(metrics.potOdds || 0, 0, 0.75),
     spr_norm: clamp((metrics.spr || 0) / 20, 0, 1),
@@ -68,6 +91,10 @@ function featureMap({ equity, metrics, profile, rangeModel, rangeInfo, position,
     facing_bet: metrics.toCall > 0 ? 1 : 0,
     free_check: ["check-option", "limped-pot", "blind-check"].includes(context) ? 1 : 0,
   };
+  EQUITY_BUCKET_NAMES.forEach((name, index) => {
+    features[name] = histogram[index];
+  });
+  return features;
 }
 
 function relu(values) {
@@ -110,6 +137,17 @@ function normalize(actions) {
     .sort((a, b) => b.frequency - a.frequency);
 }
 
+function effectiveBlend({ blend, equity, profile, rangeModel }) {
+  const texture = profile.texture || {};
+  const lowEquityWetAir =
+    profile.street !== "preflop" &&
+    equity < 0.18 &&
+    drawStrength(profile.draws) < 0.04 &&
+    (rangeModel.blockers || 0) < 0.04 &&
+    ((texture.wetness || 0) >= 0.5 || texture.connected || texture.monotone);
+  return lowEquityWetAir ? Math.min(blend, 0.035) : blend;
+}
+
 function runModel(features) {
   const model = trainedPolicyArtifact.model;
   if (!model?.layers?.length) return null;
@@ -124,10 +162,10 @@ function runModel(features) {
   return softmax(values);
 }
 
-export function applyTrainedPolicy({ actions, board, equity, metrics, profile, rangeModel, rangeInfo, position, context }) {
+export function applyTrainedPolicy({ actions, board, equity, equityHistogram, metrics, profile, rangeModel, rangeInfo, position, context }) {
   if (!trainedPolicyArtifact.enabled || !trainedPolicyArtifact.passed) return null;
   if ((board?.length || 0) < 3 || profile.street === "preflop") return null;
-  const probs = runModel(featureMap({ equity, metrics, profile, rangeModel, rangeInfo, position, context }));
+  const probs = runModel(featureMap({ equity, equityHistogram, metrics, profile, rangeModel, rangeInfo, position, context }));
   if (!probs?.length) return null;
 
   const actionKeys = metrics.toCall > 0
@@ -137,7 +175,12 @@ export function applyTrainedPolicy({ actions, board, equity, metrics, profile, r
   const byKey = new Map(actions.map((action) => [action.key, action]));
   if (!actionKeys.every((key) => byKey.has(key))) return null;
 
-  const blend = clamp(Number(trainedPolicyArtifact.blend || 0.68), 0, 0.95);
+  const blend = effectiveBlend({
+    blend: clamp(Number(trainedPolicyArtifact.blend || 0.68), 0, 0.95),
+    equity,
+    profile,
+    rangeModel,
+  });
   return {
     artifact: trainedPolicyArtifact,
     actions: normalize(

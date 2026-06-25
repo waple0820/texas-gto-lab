@@ -15,6 +15,13 @@ import { recommendStrategy } from "../src/strategy-engine.js";
 import { HoldemSimulator } from "../src/simulator.js";
 import { trainedPolicyArtifact } from "../src/trained-policy-artifact.js";
 
+assert.equal(trainedPolicyArtifact.passed, true);
+assert.equal(trainedPolicyArtifact.featureNames.length, 33);
+assert.ok(trainedPolicyArtifact.featureNames.includes("range_eq_0_10"));
+assert.ok(trainedPolicyArtifact.featureNames.includes("range_eq_90_100"));
+assert.equal(trainedPolicyArtifact.model.trainingTarget, "average-strategy-distilled-from-physical-regret");
+assert.ok(trainedPolicyArtifact.training.showdownRollouts > 0);
+
 const deck = makeDeck();
 assert.equal(deck.length, 52);
 assert.equal(new Set(deck).size, 52);

@@ -55,4 +55,4 @@ npm run test:strategy-audit
 
 ## Notes
 
-The engine uses `pokersolver` for 5-7 card hand evaluation and Monte Carlo sampling for equity. The strategy layer uses a table-driven preflop policy plus a compact self-play regret postflop artifact for practical mixed frequencies from equity, pot odds, SPR, draw texture, range pressure, position, and sizing buckets. It is still not a full no-limit solver; the runtime is designed so deeper CFR/solver exports can replace the current artifact contract later.
+The engine uses `pokersolver` for 5-7 card hand evaluation and Monte Carlo sampling for equity. The strategy layer uses a table-driven preflop policy plus a compact physical-rollout self-play postflop artifact. That artifact includes 10 range-equity histogram buckets, real showdown utility feedback, and average-strategy distillation for mixed frequencies. It is still not a full no-limit solver; the runtime is designed so deeper CFR/solver exports can replace the current artifact contract later.

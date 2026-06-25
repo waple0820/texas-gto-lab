@@ -8,6 +8,7 @@ import {
   clamp,
   comboCountForCode,
   computeDecisionMetrics,
+  expandRangeWeights,
   pct,
   RANK_VALUE,
   rangeCoverage,
@@ -82,6 +83,45 @@ function comboWeightedRangePercentile(handCode, rangeWeights) {
 
   if (total <= 0) return clamp(heroScore / 100, 0, 1);
   return clamp((weaker + tied * 0.5) / total, 0, 1);
+}
+
+function pickRangeCombo(combos, rng = Math.random) {
+  let total = 0;
+  for (const combo of combos) total += Math.max(0, Number(combo.weight || 0));
+  if (total <= 0) return null;
+  let roll = rng() * total;
+  for (const combo of combos) {
+    roll -= Math.max(0, Number(combo.weight || 0));
+    if (roll <= 0) return combo;
+  }
+  return combos.at(-1) || null;
+}
+
+function rangeEquityHistogram({ board, rangeWeights, samples = 10, iterations = 80, rng = Math.random }) {
+  const buckets = Array.from({ length: 10 }, () => 0);
+  if ((board?.length || 0) < 3) return buckets.map(() => 0.1);
+  const combos = expandRangeWeights(rangeWeights, board);
+  if (!combos.length) return buckets.map(() => 0.1);
+
+  const sampleCount = clamp(Math.round(samples), 4, 24);
+  const perHandIterations = clamp(Math.round(iterations), 40, 320);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const combo = pickRangeCombo(combos, rng);
+    if (!combo) continue;
+    const equity = calculateEquity({
+      hero: combo.cards,
+      board,
+      rangeWeights,
+      opponents: 1,
+      iterations: perHandIterations,
+      rng,
+    }).equity;
+    const bucket = clamp(Math.floor(equity * buckets.length), 0, buckets.length - 1);
+    buckets[bucket] += 1;
+  }
+
+  const total = buckets.reduce((sum, value) => sum + value, 0);
+  return total > 0 ? buckets.map((value) => value / total) : buckets.map(() => 0.1);
 }
 
 function highCardValue(board = []) {
@@ -533,6 +573,16 @@ export function recommendStrategy({
     context,
     equity: equityResult.equity,
   });
+  const equityHistogram =
+    board.length >= 3
+      ? rangeEquityHistogram({
+          board,
+          rangeWeights: activeRange,
+          samples: Math.min(16, Math.max(8, Math.round(iterations / 80))),
+          iterations: Math.min(180, Math.max(60, Math.round(iterations / 8))),
+          rng,
+        })
+      : null;
   const heuristicActions =
     profile.street === "preflop"
       ? hasFreeCheckOption(context)
@@ -547,6 +597,7 @@ export function recommendStrategy({
     actions: heuristicActions,
     board,
     equity: equityResult.equity,
+    equityHistogram,
     metrics,
     profile,
     rangeModel,
@@ -586,6 +637,7 @@ export function recommendStrategy({
     range: activeRange,
     rangeInfo,
     rangeModel,
+    equityHistogram,
     policySource,
     reasons: buildReasons({
       equityResult,

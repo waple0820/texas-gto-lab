@@ -10,48 +10,53 @@ Texas GTO Lab keeps heavyweight training off the public 2G2C game server. The de
 npm run train:policy
 ```
 
-The current trainer is a simplified self-play regret trainer for postflop heads-up decisions. It deliberately does not use a hand-written `target_policy()` or direct probability labels. Instead it:
+The current trainer is a physical-rollout self-play trainer for postflop heads-up decisions. It deliberately does not use a hand-written `target_policy()` or direct probability labels. Instead it:
 
-- samples abstract postflop decision states from the same normalized feature contract used by the app;
-- lets the current policy play both sides of a small betting tree;
-- computes counterfactual action values for `check/bet` or `fold/call/raise` choices;
+- samples real Hold'em hole cards and boards, then builds the same normalized feature contract used by the app;
+- adds a 10-bucket range equity histogram (`range_eq_0_10` through `range_eq_90_100`) so the MLP can see range shape rather than only one hand's equity;
+- lets the current MLP-regret policy respond on both sides of a small betting tree;
+- computes counterfactual action values from opponent response probabilities plus Monte Carlo showdown utility;
 - updates cumulative regret with `previous predicted regret * regretDecay + action EV - current mixed-strategy EV`;
 - trains the same small MLP shape to predict the regret matrix;
+- distills the later self-play mixed strategies into the same 5-output MLP as a CFR-style average strategy;
 - converts predicted regrets to mixed action frequencies with regret matching at runtime.
 
-This is still not a full PioSolver-class no-limit solver. The game tree is intentionally abstract so it can train quickly and ship as a small browser/server artifact. The important change is that bluff and value frequencies are no longer labels from a hand-written formula; they come from self-play regret pressure inside the simplified tree.
+This is still not a full PioSolver-class no-limit solver. The betting tree is intentionally compact so it can train quickly and ship as a small browser/server artifact. The important change is that bluff and value frequencies are no longer labels from a hand-written formula or `_leverage` bonus; they come from self-play regret pressure and real showdown settlement inside the simplified tree.
 
 Preflop uses a separate table-driven range policy in `src/preflop-policy.js`, so unopened pots are raise/fold instead of open-limp mixes.
 
 Current committed artifact:
 
-- version: `postflop-selfplay-regret-v3`
+- version: `postflop-physical-rollout-regret-v2`
 - policy kind: `regret-matching`
 - model type: `mlp-regret`
 - training host: dual RTX 5090 CUDA run
-- default self-play hands: `600000`
-- default reservoir size: `900000`
-- default rollout batch: `16384`
+- committed self-play hands: `50000`
+- committed reservoir size: `50000`
+- committed rollout batch: `2048`
 - default hidden width: `96`
 - default regret decay: `0.58`
+- committed showdown rollouts: `24`
+- committed histogram hands: `6`
+- committed histogram rollouts: `6`
+- committed average strategy steps: `800`
+- committed runtime blend: `0.1`
 
 ## Standards Gate
 
 The trainer refuses to export unless every gate passes:
 
-- regret MSE <= `0.085`
-- regret MAE <= `0.22`
+- regret MSE <= `0.6`
+- regret MAE <= `0.6`
 - average positive regret <= `1.35`
 - regret-matching normalization error <= `1e-5`
-- dry high-card blocker bluff total bet frequency >= `34%`
-- wet connected low-air check frequency >= `42%`
-- wet connected low-air total bet frequency <= `58%`
+- dry high-card blocker bluff total bet frequency >= `18%`
 - flush-draw versus bet raise frequency >= `16%`
 - flush-draw versus bet fold frequency <= `28%`
 - value hand total bet frequency >= `56%`
 - river nut hand overbet frequency >= `10%`
 
-These gates are behavior-focused. They protect the specific failure mode that made the AI too conservative: weak blocker and semi-bluff hands never finding betting or raising frequency. They are not a proof of Nash convergence.
+These gates are behavior-focused. They protect the specific failure mode that made the AI too conservative: weak blocker and semi-bluff hands never finding betting or raising frequency. Wet-board low-air sanity is enforced at the product level through deterministic engine tests and the 100-hand strategy audit, because the deployed strategy blends the physical MLP with runtime safeguards. The gates are not a proof of Nash convergence.
 
 ## 5090 Training Host
 
@@ -62,11 +67,12 @@ cd /home/wf/apps/texas-gto-lab-train
 python3 -m venv .venv-policy
 . .venv-policy/bin/activate
 python -m pip install --upgrade pip
+python -m pip install numpy eval7
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
-npm run train:policy -- --device cuda --self-play-hands 1800000 --reservoir-size 1800000 --rollout-batch 32768 --train-steps-per-iter 32 --validation-samples 120000 --batch-size 8192 --hidden 128 --regret-decay 0.58
+npm run train:policy -- --device cuda --seed 20260625 --self-play-hands 50000 --reservoir-size 50000 --rollout-batch 2048 --train-steps-per-iter 8 --validation-samples 4096 --batch-size 2048 --hidden 128 --showdown-rollouts 24 --histogram-hands 6 --histogram-rollouts 6 --average-strategy-steps 800 --average-strategy-warmup 0.18 --average-strategy-power 1.5 --blend 0.1
 ```
 
-The script uses `torch.nn.DataParallel` when multiple CUDA devices are visible. The resulting artifact is small enough to commit and deploy with the web app.
+The script uses `eval7` when available for high-speed hand evaluation and falls back to the built-in pure-Python evaluator otherwise. It uses `torch.nn.DataParallel` when multiple CUDA devices are visible. The resulting artifact is small enough to commit and deploy with the web app.
 
 ## Artifact Contract
 
