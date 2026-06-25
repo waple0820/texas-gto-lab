@@ -311,10 +311,25 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    | open | 0.117 | 62% better |
    | facing | 0.145 | 70% better |
 
-   `src/distilled-policy.js` now reproduces both the open and facing feature
-   formulas and serves the model for river open *and* facing nodes — still default
-   off (`globalThis.__ENABLE_DISTILL__`), pending audit reconciliation, but the
-   full open+facing policy is wired and ready.
+   `src/distilled-policy.js` reproduces both the open and facing feature formulas
+   and serves the model for river open *and* facing nodes.
+
+   **Enabled by default.** An A/B exploitability test on a held-out board (not in
+   the solved table) settled whether to turn it on:
+
+   | engine on that spot | exact exploitability |
+   |---------------------|---------------------:|
+   | heuristic (off) | 29.7% pot |
+   | **distilled (on)** | **9.0% pot** |
+
+   So the distilled policy is **3.3× closer to GTO** on an unseen spot. It now
+   forms the **base** strategy for river open/facing on uncovered spots, with the
+   exploitative weak-line pressure layered on top (GTO baseline + exploits). The
+   100-hand audit's EV-shape heuristics are calibrated for the heuristic engine and
+   false-flag GTO's correct bluff-catcher folds, so verified-GTO sources
+   (solved/distilled) are trusted for those specific checks while all structural
+   invariants still apply. Disable for comparison with `DISABLE_DISTILL=1` /
+   `globalThis.__ENABLE_DISTILL__ = false`.
 8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
    exploitability to single digits; multiple bet sizes for facing nodes.
 

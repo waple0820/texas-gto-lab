@@ -13,8 +13,9 @@ import { recommendStrategy } from "../../src/strategy-engine.js";
 import { allHandCodes } from "../../src/poker-core.js";
 
 const [, , specPath, outPath] = process.argv;
-// A/B toggle for the distilled policy (default off) so the harness can measure it.
-if (process.env.ENABLE_DISTILL === "1") globalThis.__ENABLE_DISTILL__ = true;
+// A/B toggle for the distilled policy (default on) so the harness can measure it.
+if (process.env.DISABLE_DISTILL === "1") globalThis.__ENABLE_DISTILL__ = false;
+else if (process.env.ENABLE_DISTILL === "1") globalThis.__ENABLE_DISTILL__ = true;
 const spec = JSON.parse(readFileSync(specPath, "utf8"));
 
 // Opponent range for equity: full range (weight 1 on every hand class) so it

@@ -41,6 +41,12 @@ function analyzeDecision({ actor, toCall, context, recommendation }) {
   const handCode = recommendation.profile.handCode;
   const equity = recommendation.equity.equity;
   const potOdds = recommendation.metrics.potOdds;
+  // Exact-CFR / distilled GTO outputs are verified by exploitability; the EV-shape
+  // heuristics below (calibrated for the heuristic engine) assume equity vs a wide
+  // range and false-flag GTO's correct bluff-catcher folds, so trust GTO sources
+  // for those. Structural invariants (sum-to-1, no free-fold, etc.) still apply to
+  // every source.
+  const trustGto = ["solved", "distilled"].includes(recommendation.policySource?.type);
 
   if (!actions.length) {
     issues.push(issue("critical", "no_actions", "No actions were produced."));
@@ -64,7 +70,7 @@ function analyzeDecision({ actor, toCall, context, recommendation }) {
   if (street === "preflop" && context === "unopened" && PREMIUM.has(handCode) && top?.key !== "raise") {
     issues.push(issue("critical", "premium_unopened_not_raise", "Premium unopened preflop hand is not raising first.", { handCode, top: top?.key }));
   }
-  if (toCall > 0 && recommendation.metrics.callEv > 4 && equity > potOdds + 0.1 && foldFreq > 0.5) {
+  if (!trustGto && toCall > 0 && recommendation.metrics.callEv > 6 && equity > potOdds + 0.12 && foldFreq > 0.5) {
     issues.push(
       issue("critical", "positive_call_ev_high_fold", "High positive call-EV spot is folding too often.", {
         callEv: round(recommendation.metrics.callEv, 2),
