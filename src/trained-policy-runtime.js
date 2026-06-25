@@ -118,9 +118,12 @@ export function applyTrainedPolicy({ actions, board, equity, metrics, profile, r
   if (!trainedPolicyArtifact.enabled || !trainedPolicyArtifact.passed) return null;
   if ((board?.length || 0) < 3 || profile.street === "preflop") return null;
   const probs = runModel(featureMap({ equity, metrics, profile, rangeModel, rangeInfo, position, context }));
-  if (!probs || probs.length !== 3) return null;
+  if (!probs?.length) return null;
 
-  const actionKeys = metrics.toCall > 0 ? ["fold", "call", "raise"] : ["check", "bet-small", "bet-big"];
+  const actionKeys = metrics.toCall > 0
+    ? trainedPolicyArtifact.actionSets?.facing || ["fold", "call", "raise"]
+    : trainedPolicyArtifact.actionSets?.open || ["check", "bet-small", "bet-big"];
+  if (probs.length !== actionKeys.length) return null;
   const byKey = new Map(actions.map((action) => [action.key, action]));
   if (!actionKeys.every((key) => byKey.has(key))) return null;
 

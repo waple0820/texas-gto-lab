@@ -10,7 +10,7 @@ Texas GTO Lab keeps heavyweight training off the public 2G2C game server. The de
 npm run train:policy
 ```
 
-The current trainer is a postflop range-role policy distiller. It is not a full PioSolver-class no-limit tree solve. It trains a small neural policy over normalized features that already exist in the strategy engine:
+The current trainer is a postflop range-role and sizing policy distiller. It is not a full PioSolver-class no-limit tree solve. It trains a small neural policy over normalized features that already exist in the strategy engine:
 
 - equity, pot odds, SPR
 - street, position, context
@@ -18,19 +18,19 @@ The current trainer is a postflop range-role policy distiller. It is not a full 
 - board texture
 - range advantage, blockers, range percentile, range coverage
 
-The exported policy is blended into the existing range-role strategy. If the artifact is missing, disabled, or fails standards, the app falls back to the heuristic range-role engine.
+The exported policy is blended into the existing range-role strategy. If the artifact is missing, disabled, or fails standards, the app falls back to the heuristic range-role engine. Preflop uses a separate table-driven range policy in `src/preflop-policy.js`, so unopened pots are raise/fold instead of open-limp mixes.
 
 Current committed artifact:
 
-- version: `postflop-range-mlp-v1`
+- version: `postflop-size-aware-mlp-v2`
 - training host: dual RTX 5090 CUDA run
-- samples: `650000`
-- validation samples: `120000`
-- epochs: `10`
-- hidden width: `96`
-- validation KL: `0.004643`
-- validation MAE: `0.019346`
-- exported size: about `112KB`
+- samples: `1200000`
+- validation samples: `220000`
+- epochs: `14`
+- hidden width: `128`
+- validation KL: `0.003003`
+- validation MAE: `0.009049`
+- exported size: about `188KB`
 
 ## Standards Gate
 
@@ -45,6 +45,8 @@ The trainer refuses to export unless every gate passes:
 - flush-draw versus bet raise frequency >= `18%`
 - flush-draw versus bet fold frequency <= `20%`
 - value hand total bet frequency >= `62%`
+- value hand big-bet plus overbet frequency >= `14%`
+- river nut hand overbet frequency >= `18%`
 
 These gates are intentionally behavior-focused. They protect the specific failure mode that made the AI too conservative: weak or blocker-heavy hands never finding bluff/semi-bluff frequencies.
 
@@ -58,7 +60,7 @@ python3 -m venv .venv-policy
 . .venv-policy/bin/activate
 python -m pip install --upgrade pip
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
-npm run train:policy -- --device cuda --samples 420000 --validation-samples 80000 --epochs 6
+npm run train:policy -- --device cuda --samples 1200000 --validation-samples 220000 --epochs 14 --batch-size 8192 --hidden 128
 ```
 
 The script uses `torch.nn.DataParallel` when multiple CUDA devices are visible. The resulting artifact is small enough to commit and deploy with the web app.
@@ -67,5 +69,5 @@ The script uses `torch.nn.DataParallel` when multiple CUDA devices are visible. 
 
 The runtime interface is intentionally artifact-based. A later CFR or Deep CFR system can replace the current distillation target as long as it exports the same feature/action contract:
 
-- no-call action set: `check`, `bet-small`, `bet-big`
-- facing-bet action set: `fold`, `call`, `raise`
+- no-call action set: `check`, `bet-small`, `bet-mid`, `bet-big`, `bet-over`
+- facing-bet action set: `fold`, `call`, `raise-small`, `raise-big`, `jam`
