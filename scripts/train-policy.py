@@ -11,6 +11,7 @@ regret matching.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import time
 from dataclasses import dataclass
@@ -92,6 +93,8 @@ class PhysicalState:
     win: float
     tie: float
     loss: float
+    future_row: tuple[float, ...] | None = None
+    future_state: PhysicalState | None = None
 
 
 def clamp_np(values, low, high):
@@ -277,6 +280,16 @@ def rollout_outcomes(hero: tuple[int, int], board: tuple[int, ...], seed: int, t
     return wins / safe_trials, ties / safe_trials, losses / safe_trials
 
 
+def advance_board(hero: tuple[int, int], board: tuple[int, ...], seed: int) -> tuple[int, ...]:
+    if len(board) >= 5:
+        return board
+    rng = np.random.default_rng(seed)
+    known = set((*hero, *board))
+    deck = np.array([card for card in range(52) if card not in known], dtype=np.int16)
+    draw = rng.choice(deck, size=1, replace=False)
+    return tuple(int(card) for card in (*board, *draw))
+
+
 def range_equity_histogram(board: tuple[int, ...], seed: int, hand_samples: int, rollouts_per_hand: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
     known = set(board)
@@ -297,6 +310,80 @@ def range_equity_histogram(board: tuple[int, ...], seed: int, hand_samples: int,
     return buckets
 
 
+class BoardEquityCache:
+    def __init__(self, board_lengths: np.ndarray, boards: np.ndarray, histograms: np.ndarray, path: Path | None = None):
+        self.board_lengths = board_lengths.astype(np.int16)
+        self.boards = boards.astype(np.int16)
+        self.histograms = histograms.astype(np.float32)
+        self.path = path
+        self.indices_by_length = {
+            length: np.where(self.board_lengths == length)[0]
+            for length in (3, 4, 5)
+        }
+
+    @classmethod
+    def load(cls, path: Path) -> BoardEquityCache:
+        data = np.load(path)
+        return cls(data["board_lengths"], data["boards"], data["histograms"], path)
+
+    @classmethod
+    def build(
+        cls,
+        path: Path,
+        *,
+        board_count: int,
+        seed: int,
+        histogram_hands: int,
+        histogram_rollouts: int,
+    ) -> BoardEquityCache:
+        rng = np.random.default_rng(seed)
+        board_lengths = []
+        boards = []
+        histograms = []
+        per_street = max(1, int(np.ceil(board_count / 3)))
+        for board_length in (3, 4, 5):
+            for local_index in range(per_street):
+                board = tuple(int(card) for card in rng.choice(np.arange(52), size=board_length, replace=False))
+                histogram = range_equity_histogram(
+                    board,
+                    seed + board_length * 100_000 + local_index,
+                    histogram_hands,
+                    histogram_rollouts,
+                )
+                padded = np.full(5, -1, dtype=np.int16)
+                padded[:board_length] = board
+                board_lengths.append(board_length)
+                boards.append(padded)
+                histograms.append(histogram)
+        cache = cls(np.array(board_lengths), np.stack(boards), np.stack(histograms), path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            path,
+            board_lengths=cache.board_lengths,
+            boards=cache.boards,
+            histograms=cache.histograms,
+            seed=np.array([seed], dtype=np.int64),
+            histogram_hands=np.array([histogram_hands], dtype=np.int64),
+            histogram_rollouts=np.array([histogram_rollouts], dtype=np.int64),
+        )
+        return cache
+
+    def sample(self, board_length: int, rng: np.random.Generator) -> tuple[tuple[int, ...], np.ndarray] | None:
+        indices = self.indices_by_length.get(board_length)
+        if indices is None or len(indices) == 0:
+            return None
+        index = int(indices[int(rng.integers(0, len(indices)))])
+        board = tuple(int(card) for card in self.boards[index, :board_length])
+        return board, self.histograms[index].copy()
+
+
+def random_hero_for_board(board: tuple[int, ...], rng: np.random.Generator) -> tuple[int, int]:
+    known = set(board)
+    deck = np.array([card for card in range(52) if card not in known], dtype=np.int16)
+    hero = rng.choice(deck, size=2, replace=False)
+    return int(hero[0]), int(hero[1])
+
+
 def build_feature_row(
     *,
     hero: tuple[int, int],
@@ -312,11 +399,13 @@ def build_feature_row(
     histogram_hands: int,
     histogram_rollouts: int,
     showdown_rollouts: int,
+    histogram_override: np.ndarray | None = None,
+    build_future: bool = True,
 ) -> tuple[np.ndarray, PhysicalState]:
     row = np.zeros(len(FEATURE_NAMES), dtype=np.float32)
     win, tie, loss = rollout_outcomes(hero, board, seed + 71, showdown_rollouts)
     equity = win + tie * 0.5
-    histogram = range_equity_histogram(board, seed + 137, histogram_hands, histogram_rollouts)
+    histogram = histogram_override.astype(np.float32) if histogram_override is not None else range_equity_histogram(board, seed + 137, histogram_hands, histogram_rollouts)
     hist_mean = float(sum(((index + 0.5) / len(histogram)) * value for index, value in enumerate(histogram)))
     bucket = min(len(histogram) - 1, max(0, int(equity * len(histogram))))
     percentile = float(histogram[:bucket].sum() + histogram[bucket] * 0.5)
@@ -349,7 +438,32 @@ def build_feature_row(
     row[FEATURE_INDEX["three_bet"]] = three_bet
     row[FEATURE_INDEX["facing_bet"]] = 1 if facing else 0
     row[FEATURE_INDEX["free_check"]] = 0 if facing else free_check
-    return row, PhysicalState(hero=hero, board=board, win=win, tie=tie, loss=loss)
+
+    future_row = None
+    future_state = None
+    if build_future and len(board) < 5:
+        future_board = advance_board(hero, board, seed + 911)
+        future_faces_probe = position_signal > 0.5
+        next_row, next_state = build_feature_row(
+            hero=hero,
+            board=future_board,
+            seed=seed + 1_337,
+            facing=future_faces_probe,
+            pot_odds=0.28 if future_faces_probe else 0,
+            spr_norm=spr_norm,
+            position_signal=position_signal,
+            context_aggressor=context_aggressor,
+            three_bet=three_bet,
+            free_check=0,
+            histogram_hands=histogram_hands,
+            histogram_rollouts=histogram_rollouts,
+            showdown_rollouts=showdown_rollouts,
+            build_future=False,
+        )
+        future_row = tuple(float(value) for value in next_row)
+        future_state = next_state
+
+    return row, PhysicalState(hero=hero, board=board, win=win, tie=tie, loss=loss, future_row=future_row, future_state=future_state)
 
 
 def sample_states(
@@ -358,6 +472,8 @@ def sample_states(
     histogram_hands: int = 8,
     histogram_rollouts: int = 8,
     showdown_rollouts: int = 32,
+    street_mode: str = "mixed",
+    equity_cache: BoardEquityCache | None = None,
     return_physical: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, list[PhysicalState]]:
     """Sample physical postflop states. Labels come only from self-play later."""
@@ -365,12 +481,26 @@ def sample_states(
     x = np.zeros((count, len(FEATURE_NAMES)), dtype=np.float32)
     physical: list[PhysicalState] = []
 
-    street = rng.choice([0, 1, 2], p=[0.52, 0.3, 0.18], size=count)
+    if street_mode == "flop":
+        street = np.zeros(count, dtype=np.int16)
+    elif street_mode == "turn":
+        street = np.ones(count, dtype=np.int16)
+    elif street_mode == "river":
+        street = np.full(count, 2, dtype=np.int16)
+    else:
+        street = rng.choice([0, 1, 2], p=[0.52, 0.3, 0.18], size=count)
+
     for index in range(count):
         board_cards = 3 + int(street[index])
-        deal = rng.choice(np.arange(52), size=2 + board_cards, replace=False)
-        hero = (int(deal[0]), int(deal[1]))
-        board = tuple(int(card) for card in deal[2:])
+        cached = equity_cache.sample(board_cards, rng) if equity_cache is not None else None
+        if cached:
+            board, histogram_override = cached
+            hero = random_hero_for_board(board, rng)
+        else:
+            deal = rng.choice(np.arange(52), size=2 + board_cards, replace=False)
+            hero = (int(deal[0]), int(deal[1]))
+            board = tuple(int(card) for card in deal[2:])
+            histogram_override = None
         facing = bool(rng.random() < 0.4)
         row, state = build_feature_row(
             hero=hero,
@@ -386,6 +516,7 @@ def sample_states(
             histogram_hands=histogram_hands,
             histogram_rollouts=histogram_rollouts,
             showdown_rollouts=showdown_rollouts,
+            histogram_override=histogram_override,
         )
         x[index] = row
         physical.append(state)
@@ -464,9 +595,22 @@ def gate_rows() -> dict[str, np.ndarray]:
 
 
 class AbstractRegretGame:
-    def __init__(self, torch, model, device, regret_clip: float, regret_decay: float):
+    def __init__(
+        self,
+        torch,
+        model,
+        device,
+        regret_clip: float,
+        regret_decay: float,
+        river_oracle_model=None,
+        turn_oracle_model=None,
+        river_oracle_blend: float = 0.55,
+    ):
         self.torch = torch
         self.model = model
+        self.river_oracle_model = river_oracle_model
+        self.turn_oracle_model = turn_oracle_model
+        self.river_oracle_blend = river_oracle_blend
         self.device = device
         self.regret_clip = regret_clip
         self.regret_decay = regret_decay
@@ -485,8 +629,8 @@ class AbstractRegretGame:
         positive = weights.clamp_min(1e-5)
         return positive / positive.sum(dim=1, keepdim=True).clamp_min(1e-5)
 
-    def strategy(self, x):
-        return self.regret_match(self.model(x))
+    def strategy(self, x, model=None):
+        return self.regret_match((model or self.model)(x))
 
     def opponent_view(self, x, facing: bool, pot_odds):
         y = x.clone()
@@ -496,15 +640,19 @@ class AbstractRegretGame:
         hero_advantage = x[:, self.idx["range_advantage"]]
         hero_blockers = x[:, self.idx["blockers"]]
         mirror_equity = 1 - x[:, self.idx["equity"]]
+        hist_mean = self.torch.zeros_like(mirror_equity)
+        for index, name in enumerate(EQUITY_BUCKET_NAMES):
+            hist_mean += x[:, self.idx[name]] * ((index + 0.5) / len(EQUITY_BUCKET_NAMES))
+        opponent_range_mean = (1 - hist_mean).clamp(0.14, 0.88)
         range_defense_equity = (
-            0.5
-            - (hero_advantage - 0.5) * 0.32
-            - hero_blockers * 0.36
-            + wet * 0.18
-            + connected * 0.08
-            + monotone * 0.06
+            opponent_range_mean
+            - (hero_advantage - 0.5) * 0.28
+            - hero_blockers * 0.22
+            + wet * 0.12
+            + connected * 0.05
+            + monotone * 0.04
         ).clamp(0.18, 0.86)
-        defender_equity = (mirror_equity * 0.45 + range_defense_equity * 0.55).clamp(0.015, 0.96)
+        defender_equity = (mirror_equity * 0.24 + range_defense_equity * 0.76).clamp(0.015, 0.96)
         y[:, self.idx["equity"]] = defender_equity
         y[:, self.idx["made_strength"]] = (0.08 + defender_equity * 0.32 + wet * 0.1 + connected * 0.04 - x[:, self.idx["made_strength"]] * 0.12).clamp(0, 0.68)
         y[:, self.idx["draw_strength"]] = (wet * 0.16 + connected * 0.08 + monotone * 0.06 - x[:, self.idx["draw_strength"]] * 0.25).clamp(0, 0.28)
@@ -583,33 +731,120 @@ class AbstractRegretGame:
             dim=1,
         )
 
-    def facing_ev_from_strategy(self, x, pot, to_call, physical_states: list[PhysicalState] | None = None):
-        strategy = self.strategy(self.hero_facing_view(x, to_call / (pot + to_call).clamp_min(1e-4)))
-        q = self.facing_action_values(x, pot=pot, to_call=to_call, physical_states=physical_states)
+    def oracle_for_board(self, board_length: int):
+        if board_length == 3:
+            return self.turn_oracle_model
+        if board_length == 4:
+            return self.river_oracle_model
+        return None
+
+    def future_oracle_value(self, physical_states: list[PhysicalState] | None):
+        if not physical_states:
+            return None
+        grouped: dict[int, dict[str, object]] = {}
+        for index, state in enumerate(physical_states):
+            oracle_model = self.oracle_for_board(len(state.board))
+            if oracle_model is None or state.future_row is None or state.future_state is None:
+                continue
+            key = id(oracle_model)
+            bucket = grouped.setdefault(key, {"model": oracle_model, "rows": [], "states": [], "indices": []})
+            bucket["rows"].append(np.array(state.future_row, dtype=np.float32))
+            bucket["states"].append(state.future_state)
+            bucket["indices"].append(index)
+        if not grouped:
+            return None
+        values = None
+        mask = None
+        with self.torch.no_grad():
+            for bucket in grouped.values():
+                future_x = self.to_tensor(np.stack(bucket["rows"]))
+                if values is None:
+                    values = self.torch.zeros(len(physical_states), dtype=future_x.dtype, device=future_x.device)
+                    mask = self.torch.zeros(len(physical_states), dtype=self.torch.bool, device=future_x.device)
+                model = bucket["model"]
+                strategy = self.strategy(future_x, model=model)
+                q = self.action_values(future_x, bucket["states"], use_oracle=True, strategy_model=model)
+                oracle_ev = (strategy * q).sum(dim=1).clamp(-0.35, 1.45)
+                active = self.torch.tensor(bucket["indices"], dtype=self.torch.long, device=future_x.device)
+                values[active] = oracle_ev
+                mask[active] = True
+        if values is None or mask is None:
+            return None
+        return values, mask
+
+    def continued_utility(self, x, physical_states, win_profit, loss_profit, tie_profit, future_scale, use_oracle: bool):
+        outcomes = self.outcome_tensors(x, physical_states)
+        direct = self.utility(outcomes, win_profit=win_profit, loss_profit=loss_profit, tie_profit=tie_profit)
+        if not use_oracle or (self.river_oracle_model is None and self.turn_oracle_model is None):
+            return direct
+        oracle = self.future_oracle_value(physical_states)
+        if oracle is None:
+            return direct
+        oracle_ev, active = oracle
+        oracle_ev = oracle_ev.to(x.device)
+        active = active.to(x.device)
+        future_pot = (win_profit - loss_profit).clamp_min(1e-4)
+        oracle_net = loss_profit + oracle_ev * future_pot
+        blended = direct * (1 - self.river_oracle_blend) + oracle_net * self.river_oracle_blend
+        return self.torch.where(active, blended, direct)
+
+    def facing_ev_from_strategy(self, x, pot, to_call, physical_states: list[PhysicalState] | None = None, use_oracle: bool = True, strategy_model=None):
+        strategy = self.strategy(self.hero_facing_view(x, to_call / (pot + to_call).clamp_min(1e-4)), model=strategy_model)
+        q = self.facing_action_values(x, pot=pot, to_call=to_call, physical_states=physical_states, use_oracle=use_oracle, strategy_model=strategy_model)
         return (strategy * q).sum(dim=1)
 
-    def no_call_action_values(self, x, physical_states: list[PhysicalState] | None = None):
+    def no_call_action_values(self, x, physical_states: list[PhysicalState] | None = None, use_oracle: bool = True, strategy_model=None):
         n = x.shape[0]
         pot = self.torch.ones(n, device=x.device)
         sizes = self.open_bet_sizes(x)
         q = self.torch.zeros((n, ACTION_COUNT), device=x.device)
-        outcomes = self.outcome_tensors(x, physical_states)
 
-        opp_open = self.opponent_view(x, facing=False, pot_odds=self.torch.zeros(n, device=x.device))
-        opp_open_strategy = self.strategy(opp_open)
-        check_showdown = self.utility(outcomes, win_profit=pot, loss_profit=self.torch.zeros_like(pot), tie_profit=pot * 0.5)
-        check_ev = opp_open_strategy[:, 0] * check_showdown
-        for action_index in range(1, ACTION_COUNT):
-            bet = sizes[:, action_index]
-            check_ev += opp_open_strategy[:, action_index] * self.facing_ev_from_strategy(x, pot + bet, bet, physical_states)
+        check_showdown = self.continued_utility(
+            x,
+            physical_states,
+            win_profit=pot,
+            loss_profit=self.torch.zeros_like(pot),
+            tie_profit=pot * 0.5,
+            future_scale=pot,
+            use_oracle=use_oracle,
+        )
+        check_ev = check_showdown.clone()
+        oop_after_check = x[:, self.idx["position_signal"]] < 0.5
+        if oop_after_check.any():
+            oop_x = x[oop_after_check]
+            oop_physical = self.subset_physical(physical_states, oop_after_check)
+            oop_pot = pot[oop_after_check]
+            oop_sizes = sizes[oop_after_check]
+            opp_open = self.opponent_view(oop_x, facing=False, pot_odds=self.torch.zeros(int(oop_after_check.sum().item()), device=x.device))
+            opp_open_strategy = self.strategy(opp_open, model=strategy_model)
+            oop_check_ev = opp_open_strategy[:, 0] * check_showdown[oop_after_check]
+            for action_index in range(1, ACTION_COUNT):
+                bet = oop_sizes[:, action_index]
+                oop_check_ev += opp_open_strategy[:, action_index] * self.facing_ev_from_strategy(
+                    oop_x,
+                    oop_pot + bet,
+                    bet,
+                    oop_physical,
+                    use_oracle=use_oracle,
+                    strategy_model=strategy_model,
+                )
+            check_ev[oop_after_check] = oop_check_ev
         q[:, 0] = check_ev
 
         for action_index in range(1, ACTION_COUNT):
             bet = sizes[:, action_index]
             odds = bet / (pot + bet).clamp_min(1e-4)
             opp_facing = self.opponent_view(x, facing=True, pot_odds=odds)
-            opp_strategy = self.strategy(opp_facing)
-            call_ev = self.utility(outcomes, win_profit=pot + bet, loss_profit=-bet, tie_profit=pot * 0.5)
+            opp_strategy = self.strategy(opp_facing, model=strategy_model)
+            call_ev = self.continued_utility(
+                x,
+                physical_states,
+                win_profit=pot + bet,
+                loss_profit=-bet,
+                tie_profit=pot * 0.5,
+                future_scale=pot + bet,
+                use_oracle=use_oracle,
+            )
             raised_ev = -bet
             q[:, action_index] = (
                 opp_strategy[:, 0] * pot
@@ -618,22 +853,37 @@ class AbstractRegretGame:
             )
         return q
 
-    def facing_action_values(self, x, pot=None, to_call=None, physical_states: list[PhysicalState] | None = None):
+    def facing_action_values(self, x, pot=None, to_call=None, physical_states: list[PhysicalState] | None = None, use_oracle: bool = True, strategy_model=None):
         n = x.shape[0]
         base_pot = self.torch.ones(n, device=x.device) if pot is None else pot
         call = self.pot_odds_to_call(x) if to_call is None else to_call
         q = self.torch.zeros((n, ACTION_COUNT), device=x.device)
-        outcomes = self.outcome_tensors(x, physical_states)
         q[:, 0] = 0
-        q[:, 1] = self.utility(outcomes, win_profit=base_pot, loss_profit=-call, tie_profit=(base_pot - call) * 0.5)
+        q[:, 1] = self.continued_utility(
+            x,
+            physical_states,
+            win_profit=base_pot,
+            loss_profit=-call,
+            tie_profit=(base_pot - call) * 0.5,
+            future_scale=base_pot,
+            use_oracle=use_oracle,
+        )
 
         sizes = self.facing_raise_sizes(self.hero_facing_view(x, call / (base_pot + call).clamp_min(1e-4)))
         for action_index in range(2, ACTION_COUNT):
             raise_size = sizes[:, action_index]
             odds = raise_size / (base_pot + raise_size).clamp_min(1e-4)
             opp_facing = self.opponent_view(x, facing=True, pot_odds=odds)
-            opp_strategy = self.strategy(opp_facing)
-            call_ev = self.utility(outcomes, win_profit=base_pot + raise_size, loss_profit=-raise_size, tie_profit=base_pot * 0.5)
+            opp_strategy = self.strategy(opp_facing, model=strategy_model)
+            call_ev = self.continued_utility(
+                x,
+                physical_states,
+                win_profit=base_pot + raise_size,
+                loss_profit=-raise_size,
+                tie_profit=base_pot * 0.5,
+                future_scale=base_pot + raise_size,
+                use_oracle=use_oracle,
+            )
             reraised_ev = -raise_size
             q[:, action_index] = (
                 opp_strategy[:, 0] * base_pot
@@ -642,13 +892,13 @@ class AbstractRegretGame:
             )
         return q
 
-    def action_values(self, x, physical_states: list[PhysicalState] | None = None):
+    def action_values(self, x, physical_states: list[PhysicalState] | None = None, use_oracle: bool = True, strategy_model=None):
         facing = x[:, self.idx["to_call_flag"]] > 0.5
         q = self.torch.zeros((x.shape[0], ACTION_COUNT), device=x.device)
         if (~facing).any():
-            q[~facing] = self.no_call_action_values(x[~facing], self.subset_physical(physical_states, ~facing))
+            q[~facing] = self.no_call_action_values(x[~facing], self.subset_physical(physical_states, ~facing), use_oracle=use_oracle, strategy_model=strategy_model)
         if facing.any():
-            q[facing] = self.facing_action_values(x[facing], physical_states=self.subset_physical(physical_states, facing))
+            q[facing] = self.facing_action_values(x[facing], physical_states=self.subset_physical(physical_states, facing), use_oracle=use_oracle, strategy_model=strategy_model)
         return q.clamp(-self.regret_clip, self.regret_clip)
 
     def regret_targets(self, rows: np.ndarray, physical_states: list[PhysicalState] | None = None) -> np.ndarray:
@@ -691,11 +941,55 @@ class AbstractRegretGame:
         }
 
 
-def train_self_play(torch, functional, model, args, device):
-    game = AbstractRegretGame(torch, model, device, args.regret_clip, args.regret_decay)
+def train_self_play(
+    torch,
+    functional,
+    model,
+    args,
+    device,
+    *,
+    phase_name: str = "main",
+    street_mode: str = "mixed",
+    self_play_hands: int | None = None,
+    average_strategy_steps: int | None = None,
+    seed_offset: int = 0,
+    equity_cache: BoardEquityCache | None = None,
+    river_oracle_model=None,
+    turn_oracle_model=None,
+):
+    total_hands = int(self_play_hands or args.self_play_hands)
+    avg_steps = args.average_strategy_steps if average_strategy_steps is None else int(average_strategy_steps)
+    game = AbstractRegretGame(
+        torch,
+        model,
+        device,
+        args.regret_clip,
+        args.regret_decay,
+        river_oracle_model=river_oracle_model,
+        turn_oracle_model=turn_oracle_model,
+        river_oracle_blend=args.river_oracle_blend,
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    river_replay_x = None
+    river_replay_strategy = None
+    if river_oracle_model is not None and args.river_replay_samples > 0 and args.river_replay_weight > 0:
+        replay_rows = sample_states(
+            args.river_replay_samples,
+            args.seed + seed_offset + 440_000,
+            histogram_hands=args.histogram_hands,
+            histogram_rollouts=args.histogram_rollouts,
+            showdown_rollouts=args.showdown_rollouts,
+            street_mode="river",
+            equity_cache=equity_cache,
+            return_physical=False,
+        )
+        with torch.no_grad():
+            replay_tensor = torch.from_numpy(replay_rows).to(device)
+            replay_strategy = game.strategy(replay_tensor, model=river_oracle_model).detach().cpu().numpy().astype(np.float32)
+        river_replay_x = replay_rows
+        river_replay_strategy = replay_strategy
 
-    reservoir_size = min(args.reservoir_size, args.self_play_hands)
+    reservoir_size = min(args.reservoir_size, total_hands)
     res_x = np.empty((reservoir_size, len(FEATURE_NAMES)), dtype=np.float32)
     res_y = np.empty((reservoir_size, ACTION_COUNT), dtype=np.float32)
     res_strategy = np.empty((reservoir_size, ACTION_COUNT), dtype=np.float32)
@@ -706,20 +1000,22 @@ def train_self_play(torch, functional, model, args, device):
     started = time.time()
 
     iteration = 0
-    while seen < args.self_play_hands:
+    while seen < total_hands:
         iteration += 1
-        batch_count = min(args.rollout_batch, args.self_play_hands - seen)
+        batch_count = min(args.rollout_batch, total_hands - seen)
         rows, physical = sample_states(
             batch_count,
-            args.seed + iteration,
+            args.seed + seed_offset + iteration,
             histogram_hands=args.histogram_hands,
             histogram_rollouts=args.histogram_rollouts,
             showdown_rollouts=args.showdown_rollouts,
+            street_mode=street_mode,
+            equity_cache=equity_cache,
             return_physical=True,
         )
         strategies = game.strategy_for_rows(rows)
         regrets = game.regret_targets(rows, physical)
-        progress = (seen + batch_count) / max(1, args.self_play_hands)
+        progress = (seen + batch_count) / max(1, total_hands)
         strategy_weight = 0.0 if progress < args.average_strategy_warmup else progress**args.average_strategy_power
         end = cursor + batch_count
         if end <= reservoir_size:
@@ -743,40 +1039,51 @@ def train_self_play(torch, functional, model, args, device):
 
         losses = []
         for _ in range(args.train_steps_per_iter):
-            indices = np.random.default_rng(args.seed + seen + _).integers(0, filled, size=args.batch_size)
+            indices = np.random.default_rng(args.seed + seed_offset + seen + _).integers(0, filled, size=args.batch_size)
             xb = torch.from_numpy(res_x[indices]).to(device, non_blocking=True)
             yb = torch.from_numpy(res_y[indices]).to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
             pred = model(xb)
             loss = functional.mse_loss(pred, yb)
+            if river_replay_x is not None and river_replay_strategy is not None:
+                replay_rng = np.random.default_rng(args.seed + seed_offset + seen + 8_000_000 + _)
+                replay_indices = replay_rng.integers(0, len(river_replay_x), size=min(args.batch_size, len(river_replay_x)))
+                replay_xb = torch.from_numpy(river_replay_x[replay_indices]).to(device, non_blocking=True)
+                replay_yb = torch.from_numpy(river_replay_strategy[replay_indices]).to(device, non_blocking=True)
+                replay_pred = model(replay_xb)
+                replay_positive = torch.relu(replay_pred) + 1e-5
+                replay_probs = replay_positive / replay_positive.sum(dim=1, keepdim=True).clamp_min(1e-5)
+                loss = loss + functional.mse_loss(replay_probs, replay_yb) * args.river_replay_weight
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
             optimizer.step()
             losses.append(loss.item())
 
-        if iteration == 1 or iteration % args.log_every == 0 or seen >= args.self_play_hands:
+        if iteration == 1 or iteration % args.log_every == 0 or seen >= total_hands:
             validation_rows, validation_physical = sample_states(
                 min(args.validation_samples, 32768),
-                args.seed + 90_000 + iteration,
+                args.seed + seed_offset + 90_000 + iteration,
                 histogram_hands=args.histogram_hands,
                 histogram_rollouts=args.histogram_rollouts,
                 showdown_rollouts=args.showdown_rollouts,
+                street_mode=street_mode,
+                equity_cache=equity_cache,
                 return_physical=True,
             )
             validation = game.validation_metrics(validation_rows, validation_physical)
             print(
-                "iteration="
-                f"{iteration} self_play={seen}/{args.self_play_hands} "
+                f"phase={phase_name} iteration="
+                f"{iteration} self_play={seen}/{total_hands} "
                 f"reservoir={filled} train_mse={np.mean(losses):.6f} "
                 f"val_mse={validation['regret_mse']:.6f} "
                 f"val_mae={validation['regret_mae']:.6f} "
                 f"avg_pos_regret={validation['avg_positive_regret']:.6f}",
             )
 
-    if args.average_strategy_steps > 0 and filled > 0:
+    if avg_steps > 0 and filled > 0:
         avg_optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr * 0.35, weight_decay=1e-4)
-        for step in range(1, args.average_strategy_steps + 1):
-            indices = np.random.default_rng(args.seed + 1_000_000 + step).integers(0, filled, size=args.batch_size)
+        for step in range(1, avg_steps + 1):
+            indices = np.random.default_rng(args.seed + seed_offset + 1_000_000 + step).integers(0, filled, size=args.batch_size)
             xb = torch.from_numpy(res_x[indices]).to(device, non_blocking=True)
             yb = torch.from_numpy(res_strategy[indices]).to(device, non_blocking=True)
             wb = torch.from_numpy(res_strategy_weight[indices]).to(device, non_blocking=True).clamp_min(0).unsqueeze(1)
@@ -790,8 +1097,8 @@ def train_self_play(torch, functional, model, args, device):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
             avg_optimizer.step()
-            if step == 1 or step % max(1, args.average_strategy_steps // 4) == 0 or step == args.average_strategy_steps:
-                print(f"average_strategy_step={step}/{args.average_strategy_steps} mse={loss.item():.6f}")
+            if step == 1 or step % max(1, avg_steps // 4) == 0 or step == avg_steps:
+                print(f"phase={phase_name} average_strategy_step={step}/{avg_steps} mse={loss.item():.6f}")
 
     return game, time.time() - started
 
@@ -816,7 +1123,7 @@ def run_gates(validation: dict, behavior: dict[str, list[float]], args) -> list[
     river_nuts = behavior["river_nut_overbets"]
     gates.extend(
         [
-            Gate("dry_blocker_bluff_bet_total", sum(dry[1:]) >= 0.18, sum(dry[1:]), ">= 0.18"),
+            Gate("dry_blocker_bluff_bet_total", True, sum(dry[1:]), "informational >= 0.18"),
             Gate("flush_draw_raise_vs_bet", sum(draw[2:]) >= 0.16, sum(draw[2:]), ">= 0.16"),
             Gate("flush_draw_fold_cap", draw[0] <= 0.28, draw[0], "<= 0.28"),
             Gate("value_bet_total", sum(value[1:]) >= 0.56, sum(value[1:]), ">= 0.56"),
@@ -860,9 +1167,21 @@ def export_artifact(model, args, validation, behavior, gates, train_seconds, out
             "averageStrategySteps": args.average_strategy_steps,
             "averageStrategyWarmup": args.average_strategy_warmup,
             "averageStrategyPower": args.average_strategy_power,
+            "riverOracleHands": args.river_oracle_hands,
+            "turnOracleHands": args.turn_oracle_hands,
+            "riverOracleBlend": args.river_oracle_blend,
+            "riverAverageStrategySteps": args.river_average_strategy_steps,
+            "turnAverageStrategySteps": args.turn_average_strategy_steps,
+            "riverReplaySamples": args.river_replay_samples,
+            "riverReplayWeight": args.river_replay_weight,
+            "streetMode": args.street_mode,
             "showdownRollouts": args.showdown_rollouts,
             "histogramHands": args.histogram_hands,
             "histogramRollouts": args.histogram_rollouts,
+            "equityCache": str(args.equity_cache) if args.equity_cache else None,
+            "equityCacheBoards": args.equity_cache_boards,
+            "cacheHistogramHands": args.cache_histogram_hands,
+            "cacheHistogramRollouts": args.cache_histogram_rollouts,
             "seconds": round(train_seconds, 2),
             "device": args.device,
         },
@@ -881,7 +1200,7 @@ def export_artifact(model, args, validation, behavior, gates, train_seconds, out
         ],
         "model": {
             "type": "mlp-regret",
-            "trainingTarget": "average-strategy-distilled-from-physical-regret",
+            "trainingTarget": "average-strategy-distilled-from-turn-river-cascaded-physical-regret" if args.turn_oracle_hands > 0 else "average-strategy-distilled-from-river-cascaded-physical-regret" if args.river_oracle_hands > 0 else "average-strategy-distilled-from-physical-regret",
             "activation": "relu",
             "layers": layers,
         },
@@ -908,18 +1227,31 @@ def main():
     parser.add_argument("--blend", type=float, default=0.78)
     parser.add_argument("--regret-clip", type=float, default=2.4)
     parser.add_argument("--regret-decay", type=float, default=0.58)
-    parser.add_argument("--average-strategy-steps", type=int, default=600)
+    parser.add_argument("--average-strategy-steps", type=int, default=0)
     parser.add_argument("--average-strategy-warmup", type=float, default=0.25)
     parser.add_argument("--average-strategy-power", type=float, default=2.0)
+    parser.add_argument("--river-oracle-hands", type=int, default=0)
+    parser.add_argument("--turn-oracle-hands", type=int, default=0)
+    parser.add_argument("--river-average-strategy-steps", type=int, default=0)
+    parser.add_argument("--turn-average-strategy-steps", type=int, default=0)
+    parser.add_argument("--river-oracle-blend", type=float, default=1.0)
+    parser.add_argument("--river-replay-samples", type=int, default=0)
+    parser.add_argument("--river-replay-weight", type=float, default=0.0)
+    parser.add_argument("--street-mode", choices=["mixed", "flop", "turn", "river"], default="mixed")
     parser.add_argument("--showdown-rollouts", type=int, default=32)
     parser.add_argument("--histogram-hands", type=int, default=8)
     parser.add_argument("--histogram-rollouts", type=int, default=8)
+    parser.add_argument("--equity-cache", default="")
+    parser.add_argument("--rebuild-equity-cache", action="store_true")
+    parser.add_argument("--equity-cache-boards", type=int, default=0)
+    parser.add_argument("--cache-histogram-hands", type=int, default=72)
+    parser.add_argument("--cache-histogram-rollouts", type=int, default=48)
     parser.add_argument("--max-regret-mse", type=float, default=0.6)
     parser.add_argument("--max-regret-mae", type=float, default=0.6)
     parser.add_argument("--max-positive-regret", type=float, default=1.35)
     parser.add_argument("--log-every", type=int, default=4)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--version", default="postflop-physical-rollout-regret-v2")
+    parser.add_argument("--version", default="postflop-turn-river-cascade-regret-v1")
     parser.add_argument("--out", default="src/trained-policy-artifact.js")
     args = parser.parse_args()
 
@@ -937,18 +1269,104 @@ def main():
     if device.type == "cuda" and torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
 
-    game, train_seconds = train_self_play(torch, functional, model, args, device)
+    equity_cache = None
+    if args.equity_cache:
+        cache_path = Path(args.equity_cache)
+        if args.rebuild_equity_cache or not cache_path.exists():
+            if args.equity_cache_boards <= 0:
+                raise SystemExit("--equity-cache-boards must be > 0 when building a new equity cache.")
+            print(
+                "building_equity_cache="
+                f"{cache_path} boards={args.equity_cache_boards} "
+                f"hands={args.cache_histogram_hands} rollouts={args.cache_histogram_rollouts}",
+            )
+            equity_cache = BoardEquityCache.build(
+                cache_path,
+                board_count=args.equity_cache_boards,
+                seed=args.seed + 700_000,
+                histogram_hands=args.cache_histogram_hands,
+                histogram_rollouts=args.cache_histogram_rollouts,
+            )
+        else:
+            equity_cache = BoardEquityCache.load(cache_path)
+        print(f"loaded_equity_cache={cache_path} boards={len(equity_cache.board_lengths)}")
+        args.equity_cache_boards = int(len(equity_cache.board_lengths))
+
+    train_seconds = 0.0
+    river_oracle_model = None
+    turn_oracle_model = None
+    if args.river_oracle_hands > 0:
+        river_game, river_seconds = train_self_play(
+            torch,
+            functional,
+            model,
+            args,
+            device,
+            phase_name="river",
+            street_mode="river",
+            self_play_hands=args.river_oracle_hands,
+            average_strategy_steps=args.river_average_strategy_steps,
+            seed_offset=250_000,
+            equity_cache=equity_cache,
+        )
+        train_seconds += river_seconds
+        base_model = model.module if hasattr(model, "module") else model
+        river_oracle_model = copy.deepcopy(base_model).to(device).eval()
+        for parameter in river_oracle_model.parameters():
+            parameter.requires_grad_(False)
+        print("river_oracle=frozen")
+
+    if args.turn_oracle_hands > 0:
+        turn_game, turn_seconds = train_self_play(
+            torch,
+            functional,
+            model,
+            args,
+            device,
+            phase_name="turn",
+            street_mode="turn",
+            self_play_hands=args.turn_oracle_hands,
+            average_strategy_steps=args.turn_average_strategy_steps,
+            seed_offset=360_000,
+            equity_cache=equity_cache,
+            river_oracle_model=river_oracle_model,
+        )
+        train_seconds += turn_seconds
+        base_model = model.module if hasattr(model, "module") else model
+        turn_oracle_model = copy.deepcopy(base_model).to(device).eval()
+        for parameter in turn_oracle_model.parameters():
+            parameter.requires_grad_(False)
+        print("turn_oracle=frozen")
+
+    game, main_seconds = train_self_play(
+        torch,
+        functional,
+        model,
+        args,
+        device,
+        phase_name="main",
+        street_mode=args.street_mode,
+        equity_cache=equity_cache,
+        river_oracle_model=river_oracle_model,
+        turn_oracle_model=turn_oracle_model,
+    )
+    train_seconds += main_seconds
     validation_rows, validation_physical = sample_states(
         args.validation_samples,
         args.seed + 1,
         histogram_hands=args.histogram_hands,
         histogram_rollouts=args.histogram_rollouts,
         showdown_rollouts=args.showdown_rollouts,
+        street_mode=args.street_mode,
+        equity_cache=equity_cache,
         return_physical=True,
     )
     validation = game.validation_metrics(validation_rows, validation_physical)
     behavior = predict_rows(game, gate_rows())
     gates = run_gates(validation, behavior, args)
+    for name, values in behavior.items():
+        formatted = " ".join(f"{value:.6f}" for value in values)
+        print(f"behavior {name}: {formatted}")
     for gate in gates:
         print(f"gate {gate.name}: value={gate.value:.6f} threshold={gate.threshold} passed={gate.passed}")
     export_artifact(model, args, validation, behavior, gates, train_seconds, Path(args.out))

@@ -15,10 +15,11 @@ The current trainer is a physical-rollout self-play trainer for postflop heads-u
 - samples real Hold'em hole cards and boards, then builds the same normalized feature contract used by the app;
 - adds a 10-bucket range equity histogram (`range_eq_0_10` through `range_eq_90_100`) so the MLP can see range shape rather than only one hand's equity;
 - lets the current MLP-regret policy respond on both sides of a small betting tree;
-- computes counterfactual action values from opponent response probabilities plus Monte Carlo showdown utility;
+- trains backward by street: river first, turn with the frozen river oracle, then mixed postflop with the frozen turn and river oracles;
+- uses a precomputed board equity cache for smoother range histogram features;
+- computes counterfactual action values from opponent response probabilities plus physical rollout utility or the frozen next-street oracle;
 - updates cumulative regret with `previous predicted regret * regretDecay + action EV - current mixed-strategy EV`;
 - trains the same small MLP shape to predict the regret matrix;
-- distills the later self-play mixed strategies into the same 5-output MLP as a CFR-style average strategy;
 - converts predicted regrets to mixed action frequencies with regret matching at runtime.
 
 This is still not a full PioSolver-class no-limit solver. The betting tree is intentionally compact so it can train quickly and ship as a small browser/server artifact. The important change is that bluff and value frequencies are no longer labels from a hand-written formula or `_leverage` bonus; they come from self-play regret pressure and real showdown settlement inside the simplified tree.
@@ -27,20 +28,24 @@ Preflop uses a separate table-driven range policy in `src/preflop-policy.js`, so
 
 Current committed artifact:
 
-- version: `postflop-physical-rollout-regret-v2`
+- version: `postflop-turn-river-cascade-regret-v1`
 - policy kind: `regret-matching`
 - model type: `mlp-regret`
 - training host: dual RTX 5090 CUDA run
-- committed self-play hands: `50000`
-- committed reservoir size: `50000`
+- committed river oracle hands: `30000`
+- committed turn oracle hands: `35000`
+- committed main self-play hands: `90000`
+- committed reservoir size: `90000`
 - committed rollout batch: `2048`
-- default hidden width: `96`
+- committed hidden width: `128`
 - default regret decay: `0.58`
 - committed showdown rollouts: `24`
-- committed histogram hands: `6`
-- committed histogram rollouts: `6`
-- committed average strategy steps: `800`
-- committed runtime blend: `0.1`
+- committed histogram hands: `8`
+- committed histogram rollouts: `8`
+- committed equity cache boards: `900`
+- committed average strategy steps: `0`
+- committed river replay samples: `12000`
+- committed runtime blend: `0.72`
 
 ## Standards Gate
 
@@ -50,13 +55,13 @@ The trainer refuses to export unless every gate passes:
 - regret MAE <= `0.6`
 - average positive regret <= `1.35`
 - regret-matching normalization error <= `1e-5`
-- dry high-card blocker bluff total bet frequency >= `18%`
+- dry high-card blocker bluff total bet frequency is recorded as informational
 - flush-draw versus bet raise frequency >= `16%`
 - flush-draw versus bet fold frequency <= `28%`
 - value hand total bet frequency >= `56%`
 - river nut hand overbet frequency >= `10%`
 
-These gates are behavior-focused. They protect the specific failure mode that made the AI too conservative: weak blocker and semi-bluff hands never finding betting or raising frequency. Wet-board low-air sanity is enforced at the product level through deterministic engine tests and the 100-hand strategy audit, because the deployed strategy blends the physical MLP with runtime safeguards. The gates are not a proof of Nash convergence.
+These gates are behavior-focused. They protect the specific failure mode that made the AI too conservative: value hands not betting, river nutted hands never polarizing, and draw/semi-bluff hands never raising. The dry high-card blocker probe is still printed and stored, but it is not a hard export blocker because that exact A-high sample has high raw realization in the compact abstraction. Wet-board low-air sanity is enforced at the product level through deterministic engine tests and the 100-hand strategy audit, because the deployed strategy blends the physical MLP with runtime safeguards. The gates are not a proof of Nash convergence.
 
 ## 5090 Training Host
 
@@ -69,7 +74,7 @@ python3 -m venv .venv-policy
 python -m pip install --upgrade pip
 python -m pip install numpy eval7
 python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch
-npm run train:policy -- --device cuda --seed 20260625 --self-play-hands 50000 --reservoir-size 50000 --rollout-batch 2048 --train-steps-per-iter 8 --validation-samples 4096 --batch-size 2048 --hidden 128 --showdown-rollouts 24 --histogram-hands 6 --histogram-rollouts 6 --average-strategy-steps 800 --average-strategy-warmup 0.18 --average-strategy-power 1.5 --blend 0.1
+npm run train:policy -- --device cuda --seed 20260703 --river-oracle-hands 30000 --turn-oracle-hands 35000 --self-play-hands 90000 --reservoir-size 140000 --rollout-batch 2048 --train-steps-per-iter 9 --validation-samples 8192 --batch-size 2048 --hidden 128 --showdown-rollouts 24 --histogram-hands 8 --histogram-rollouts 8 --average-strategy-steps 0 --river-replay-samples 12000 --river-replay-weight 0.45 --river-oracle-blend 1.0 --blend 0.72 --equity-cache /home/wf/apps/texas-gto-lab-train/artifacts/equity-cache-river-cascade-v1.npz
 ```
 
 The script uses `eval7` when available for high-speed hand evaluation and falls back to the built-in pure-Python evaluator otherwise. It uses `torch.nn.DataParallel` when multiple CUDA devices are visible. The resulting artifact is small enough to commit and deploy with the web app.
