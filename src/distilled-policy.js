@@ -1,4 +1,4 @@
-import { clamp, RANK_VALUE, cardRank } from "./poker-core.js";
+import { clamp, RANK_VALUE, cardRank, cardSuit } from "./poker-core.js";
 import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
 
 // Runtime consumer for the GTO-distilled policy (unified open + facing model,
@@ -59,7 +59,24 @@ function normalizeHistogram(equityHistogram, equity) {
 // gen_solved_dataset.build_features (open) / gen_facing_dataset.facing_features
 // (facing). `facing` flips context_aggressor/free_check/facing_bet/to_call_flag
 // and the +0.05 aggressor term in range_advantage.
-function buildFeatures({ hero, equity, hist, profile, metrics, position, facing }) {
+// Granular blockers — must match gen_solved_dataset.blocker_features exactly.
+function blockerFeatures(hero, board) {
+  const suitCounts = {};
+  for (const c of board) suitCounts[cardSuit(c)] = (suitCounts[cardSuit(c)] || 0) + 1;
+  const flushSuit = Object.keys(suitCounts).find((s) => suitCounts[s] >= 3) || null;
+  const fl = flushSuit && hero.some((c) => cardSuit(c) === flushSuit) ? 1 : 0;
+  const nutfl = flushSuit && hero.some((c) => cardSuit(c) === flushSuit && RANK_VALUE[cardRank(c)] === 14) ? 1 : 0;
+  const ranks = board.map((c) => RANK_VALUE[cardRank(c)]);
+  const topRank = Math.max(...ranks);
+  const top = hero.some((c) => RANK_VALUE[cardRank(c)] === topRank) ? 1 : 0;
+  const rankCounts = {};
+  for (const r of ranks) rankCounts[r] = (rankCounts[r] || 0) + 1;
+  const pairedRanks = new Set(Object.keys(rankCounts).filter((r) => rankCounts[r] >= 2).map(Number));
+  const pblk = pairedRanks.size && hero.some((c) => pairedRanks.has(RANK_VALUE[cardRank(c)])) ? 1 : 0;
+  return { flush_blocker: fl, nut_flush_blocker: nutfl, top_blocker: top, board_pair_blocker: pblk };
+}
+
+function buildFeatures({ hero, board, equity, hist, profile, metrics, position, facing }) {
   const texture = profile.texture || {};
   const wet = clamp(texture.wetness || 0, 0, 1);
   const paired = texture.paired ? 1 : 0;
@@ -98,6 +115,7 @@ function buildFeatures({ hero, equity, hist, profile, metrics, position, facing 
   hist.forEach((v, i) => {
     f[`range_eq_${i * 10}_${i * 10 + 10}`] = v;
   });
+  Object.assign(f, blockerFeatures(hero, board));
   return distilledPolicyArtifact.featureNames.map((name) => Number(f[name] || 0));
 }
 
@@ -130,7 +148,7 @@ export function distilledActions({ hero, board, equity, equityHistogram, profile
 
   const facing = (metrics.toCall || 0) > 0;
   const hist = normalizeHistogram(equityHistogram, equity);
-  const probs = forward(buildFeatures({ hero, equity, hist, profile, metrics, position, facing }));
+  const probs = forward(buildFeatures({ hero, board, equity, hist, profile, metrics, position, facing }));
   const keys = facing ? distilledPolicyArtifact.actionSets.facing : distilledPolicyArtifact.actionSets.open;
   if (probs.length !== keys.length) return null;
   return keys
