@@ -944,6 +944,15 @@ function renderPractice() {
   hydrateIcons();
 }
 
+// Color-code action buttons by type for at-a-glance poker reads.
+function actionTone(id = "") {
+  const key = String(id).toLowerCase();
+  if (key.includes("fold")) return "act-fold";
+  if (key.includes("allin") || key.includes("jam") || key.includes("all-in")) return "act-allin";
+  if (key.includes("check") || key.includes("call")) return "act-call";
+  return "act-bet"; // bets and raises (third/half/two-thirds/pot/overbet/raise/...)
+}
+
 function cardPip(card, hidden = false) {
   if (hidden) return `<span class="mini-card hidden">?</span>`;
   return `<span class="mini-card ${suitTone(card)}">${cardLabel(card)}</span>`;
@@ -1141,21 +1150,21 @@ function renderSimActions() {
     $("#sim-actions").innerHTML = `<div class="waiting">AI thinking...</div>`;
   } else if (toCall <= 0 && simulator.street !== "preflop") {
     $("#sim-actions").innerHTML = `
-      <button data-sim="check-call">过牌</button>
-      <button data-sim="third">1/3 pot</button>
-      <button data-sim="half">1/2 pot</button>
-      <button data-sim="two-thirds">2/3 pot</button>
-      <button data-sim="pot">Pot</button>
-      <button data-sim="overbet">Overbet</button>
-      <button data-sim="allin">All-in</button>
+      <button class="${actionTone("check-call")}" data-sim="check-call">过牌</button>
+      <button class="${actionTone("third")}" data-sim="third">1/3 pot</button>
+      <button class="${actionTone("half")}" data-sim="half">1/2 pot</button>
+      <button class="${actionTone("two-thirds")}" data-sim="two-thirds">2/3 pot</button>
+      <button class="${actionTone("pot")}" data-sim="pot">Pot</button>
+      <button class="${actionTone("overbet")}" data-sim="overbet">Overbet</button>
+      <button class="${actionTone("allin")}" data-sim="allin">All-in</button>
     `;
   } else {
     $("#sim-actions").innerHTML = `
-      <button ${toCall <= 0 ? "disabled" : ""} data-sim="fold">弃牌</button>
-      <button data-sim="check-call">${toCall > 0 ? `跟注 ${toCall}bb` : "过牌"}</button>
-      <button data-sim="half">${toCall > 0 || noCallPreflop ? "小加注" : "下注 1/2 pot"}</button>
-      <button data-sim="pot">${toCall > 0 || noCallPreflop ? "大加注" : "下注 pot"}</button>
-      <button data-sim="allin">All-in</button>
+      <button class="${actionTone("fold")}" ${toCall <= 0 ? "disabled" : ""} data-sim="fold">弃牌</button>
+      <button class="${actionTone("check-call")}" data-sim="check-call">${toCall > 0 ? `跟注 ${toCall}bb` : "过牌"}</button>
+      <button class="${actionTone("half")}" data-sim="half">${toCall > 0 || noCallPreflop ? "小加注" : "下注 1/2 pot"}</button>
+      <button class="${actionTone("pot")}" data-sim="pot">${toCall > 0 || noCallPreflop ? "大加注" : "下注 pot"}</button>
+      <button class="${actionTone("allin")}" data-sim="allin">All-in</button>
     `;
   }
   $$("#sim-actions button").forEach((button) => {
@@ -1478,7 +1487,7 @@ function renderMpActions(state) {
     return;
   }
   if (options.length) {
-    $("#mp-actions").innerHTML = options.map((option) => `<button data-mp-action="${option.id}">${escapeHtml(option.label)}</button>`).join("");
+    $("#mp-actions").innerHTML = options.map((option) => `<button class="${actionTone(option.id)}" data-mp-action="${option.id}">${escapeHtml(option.label)}</button>`).join("");
   } else if (state.phase === "playing") {
     $("#mp-actions").innerHTML = `<div class="waiting">${state.turnId ? "等待其他玩家行动" : "等待发牌"}</div>`;
   } else {

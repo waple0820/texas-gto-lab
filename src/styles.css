@@ -1742,6 +1742,31 @@ button:focus-visible {
   font-weight: 800;
 }
 
+/* Color-code action buttons by type (poker reads at a glance). */
+.sim-actions button.act-fold {
+  border-color: rgba(201, 80, 80, 0.5);
+  background: linear-gradient(180deg, rgba(201, 80, 80, 0.16), transparent), #1a1614;
+  color: #f0b8b8;
+}
+.sim-actions button.act-call {
+  border-color: rgba(67, 184, 131, 0.5);
+  background: linear-gradient(180deg, rgba(67, 184, 131, 0.16), transparent), #141d18;
+  color: #a7ecc9;
+}
+.sim-actions button.act-bet {
+  border-color: rgba(215, 168, 77, 0.5);
+  background: linear-gradient(180deg, rgba(215, 168, 77, 0.16), transparent), #1c1812;
+  color: #f3d79a;
+}
+.sim-actions button.act-allin {
+  border-color: rgba(201, 80, 80, 0.7);
+  background: linear-gradient(180deg, rgba(201, 80, 80, 0.28), rgba(201, 80, 80, 0.08)), #1a1412;
+  color: #ffd2d2;
+}
+.sim-actions button.act-fold:hover { border-color: rgba(201, 80, 80, 0.8); }
+.sim-actions button.act-call:hover { border-color: rgba(67, 184, 131, 0.8); }
+.sim-actions button.act-bet:hover { border-color: rgba(215, 168, 77, 0.85); }
+
 .sim-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.38;
