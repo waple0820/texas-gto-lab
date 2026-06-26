@@ -39,6 +39,65 @@ const AI_NAMES = [
   "皮卡丘",
   "阿童木",
 ];
+
+// Per-bot personality. Real opponents aren't all tight-GTO: each has a leaning —
+// loose/tight, aggressive/passive. Each bot is assigned an archetype that
+// perturbs the GTO baseline so the table feels varied and human (and exploitably
+// so). The GTO engine output is never changed; personality is a post-process
+// layer over its action frequencies plus a preflop range-width lean.
+//   loose: -1 tight .. +1 loose   (folds less / calls more as it rises)
+//   aggr:  -1 passive .. +1 aggressive (bets & raises more as it rises)
+//   style: preflop range width fed to buildRangeWeights
+//   temp:  action-sampling temperature (higher = looser/spewier)
+const PERSONALITIES = [
+  { key: "rock", label: "岩石", loose: -0.85, aggr: -0.55, style: "tight", temp: 0.7 },
+  { key: "tag", label: "紧凶", loose: -0.45, aggr: 0.55, style: "tight", temp: 0.85 },
+  { key: "balanced", label: "均衡", loose: 0.0, aggr: 0.0, style: "balanced", temp: 1.0 },
+  { key: "lag", label: "松凶", loose: 0.5, aggr: 0.6, style: "loose", temp: 1.15 },
+  { key: "station", label: "跟注站", loose: 0.65, aggr: -0.65, style: "loose", temp: 1.2 },
+  { key: "maniac", label: "疯子", loose: 0.9, aggr: 0.85, style: "wide", temp: 1.5 },
+];
+// Weighted draw so common types dominate and extremes (rock/station/maniac) are
+// the occasional spice rather than the norm.
+const PERSONALITY_POOL = [
+  "balanced", "balanced", "tag", "tag", "lag", "lag", "rock", "station", "maniac",
+];
+
+function randomPersonality() {
+  const key = PERSONALITY_POOL[Math.floor(Math.random() * PERSONALITY_POOL.length)];
+  const base = PERSONALITIES.find((p) => p.key === key) || PERSONALITIES[2];
+  const jitter = (v, d) => round(clamp(v + (Math.random() * 2 - 1) * d, -1, 1), 2);
+  return {
+    key: base.key,
+    label: base.label,
+    loose: jitter(base.loose, 0.15),
+    aggr: jitter(base.aggr, 0.15),
+    style: base.style,
+    temp: round(clamp(base.temp + (Math.random() * 2 - 1) * 0.1, 0.5, 1.8), 2),
+  };
+}
+
+const AGGRESSIVE_KEYS = new Set([
+  "bet-small", "bet-mid", "bet-big", "bet-over", "raise", "raise-small", "raise-big", "jam",
+]);
+
+// Reshape GTO action frequencies by personality, then renormalize. Loose bots
+// fold less / call more; aggressive bots bet & raise more and check less.
+function applyPersonality(actions, personality) {
+  if (!personality || !Array.isArray(actions) || !actions.length) return actions;
+  const { loose, aggr } = personality;
+  const tuned = actions.map((action) => {
+    let freq = Math.max(0, action.frequency || 0);
+    if (action.key === "fold") freq *= clamp(1 - loose * 0.4, 0.2, 2);
+    else if (action.key === "call") freq *= clamp(1 + loose * 0.25 - aggr * 0.15, 0.2, 2.5);
+    else if (action.key === "check") freq *= clamp(1 - aggr * 0.2, 0.3, 2);
+    else if (AGGRESSIVE_KEYS.has(action.key)) freq *= clamp(1 + aggr * 0.5, 0.2, 2.5);
+    return { ...action, frequency: freq };
+  });
+  const total = tuned.reduce((sum, action) => sum + action.frequency, 0);
+  if (total <= 1e-9) return actions;
+  return tuned.map((action) => ({ ...action, frequency: action.frequency / total }));
+}
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -253,6 +312,7 @@ function makePlayer(name, type) {
     hole: [],
     review: [],
     lastAction: null,
+    personality: type === "ai" ? randomPersonality() : null,
     aiTemperature: type === "ai" ? round(0.96 + Math.random() * 0.18, 2) : null,
   };
 }
@@ -693,7 +753,7 @@ function recommendFor(player) {
   const position = positionFor(player);
   const context = contextFor(player, toCall);
   const rangeWeights = buildRangeWeights({
-    style: "balanced",
+    style: player.personality?.style || "balanced",
     position,
     context,
     tableSize: activePlayers().length,
@@ -799,7 +859,8 @@ function queueAiIfNeeded() {
     const current = getPlayer(table.turnId);
     if (current?.type !== "ai") return;
     const recommendation = recommendFor(current);
-    const picked = pickAction(recommendation.actions, Math.random, current.aiTemperature || 1);
+    const tunedActions = applyPersonality(recommendation.actions, current.personality);
+    const picked = pickAction(tunedActions, Math.random, current.personality?.temp || current.aiTemperature || 1);
     const action = actionForRecommendation(picked, recommendation, toCallFor(current));
     handlePlayerAction(current, action);
   }, 650);
@@ -866,6 +927,7 @@ function publicState(forPlayer = null) {
       id: player.id,
       name: player.name,
       type: player.type,
+      style: player.personality?.label || null,
       connected: player.connected,
       stack: round(player.stack, 1),
       ready: player.ready,
