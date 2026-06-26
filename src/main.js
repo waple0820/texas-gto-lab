@@ -313,6 +313,18 @@ app.innerHTML = `
               <button id="mp-add-ai">添加电脑</button>
               <button id="mp-copy-link">复制邀请链接</button>
             </div>
+            <div class="mp-advice" id="mp-advice" hidden>
+              <div class="subhead">
+                <strong>GTO 建议</strong>
+                <span id="mp-advice-tag">轮到你行动</span>
+              </div>
+              <div class="policy-source-row" id="mp-advice-policy">
+                <span class="policy-badge" id="mp-advice-badge"></span>
+                <span class="policy-note" id="mp-advice-note"></span>
+              </div>
+              <div class="action-mix" id="mp-advice-mix"></div>
+              <div class="metric-grid" id="mp-advice-metrics"></div>
+            </div>
             <div class="sim-actions" id="mp-actions"></div>
             <div class="showdown-shell" id="mp-showdown-shell" hidden>
               <div class="subhead">
@@ -1350,6 +1362,7 @@ function renderMultiplayer() {
 
   renderMpSeats(state);
   renderMpCenter(state);
+  renderMpAdvice(state);
   renderMpActions(state);
   renderMpActionLine(state);
   renderMpReview(state);
@@ -1408,6 +1421,7 @@ function renderMpSeats(state) {
             <div class="mp-seat-head">
               <strong>${escapeHtml(player.name)}</strong>
               <span>${player.type === "ai" ? "AI" : isMe ? "你" : "玩家"}</span>
+              ${player.style ? `<span class="seat-style">${escapeHtml(player.style)}</span>` : ""}
             </div>
             <div class="mp-seat-meta">
               <span class="stack">${round(player.stack, 1)}bb</span>
@@ -1483,6 +1497,42 @@ function renderMpShowdownCards(state) {
         </div>
       `,
     )
+    .join("");
+}
+
+function renderMpAdvice(state) {
+  const advice = state?.me?.advice;
+  const shell = $("#mp-advice");
+  if (!advice || !advice.actions?.length) {
+    shell.hidden = true;
+    return;
+  }
+  shell.hidden = false;
+  const badge = POLICY_BADGES[advice.policySource?.type] || POLICY_BADGES.heuristic;
+  $("#mp-advice-policy").className = `policy-source-row ${badge.kind}`;
+  $("#mp-advice-badge").textContent = badge.label;
+  const version = advice.policySource?.version ? ` · ${advice.policySource.version}` : "";
+  $("#mp-advice-note").textContent = `${badge.note}${version}`;
+  $("#mp-advice-mix").innerHTML = [...advice.actions]
+    .sort((a, b) => b.frequency - a.frequency)
+    .map(
+      (action) => `
+        <div class="mix-row ${action.tone || ""}">
+          <div class="mix-label"><strong>${escapeHtml(action.label)}</strong><span>${pct(action.frequency, 0)}</span></div>
+          <div class="mix-bar"><span style="width:${action.frequency * 100}%"></span></div>
+        </div>
+      `,
+    )
+    .join("");
+  $("#mp-advice-metrics").innerHTML = [
+    ["权益", pct(advice.equity, 0)],
+    ["Pot Odds", advice.potOdds > 0 ? pct(advice.potOdds, 0) : "—"],
+    ["SPR", round(advice.spr, 1)],
+    ["MDF", advice.mdf > 0 ? pct(advice.mdf, 0) : "—"],
+    ["Call EV", `${round(advice.callEv, 1)}bb`],
+    ["尺度", advice.sizing || "—"],
+  ]
+    .map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`)
     .join("");
 }
 

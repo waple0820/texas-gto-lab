@@ -7,6 +7,7 @@ import { WebSocketServer } from "ws";
 import {
   buildRangeWeights,
   cardLabel,
+  clamp,
   compareSolvedHands,
   makeDeck,
   round,
@@ -953,9 +954,37 @@ function publicState(forPlayer = null) {
           toCall: table.phase === "playing" && forPlayer.inHand ? toCallFor(forPlayer) : 0,
           isTurn: table.turnId === forPlayer.id,
           actionOptions: actionOptionsFor(forPlayer),
+          advice: adviceFor(forPlayer),
         }
       : null,
   };
+}
+
+// Live GTO read for the hero when it is their turn — the multiplayer decision
+// station. Humans have no personality, so recommendFor uses the balanced/GTO
+// range; this is the pure equilibrium advice (action mix + key metrics + the
+// policy source that produced it), surfaced so the UI feels like GTO software.
+function adviceFor(player) {
+  if (!player || player.type !== "human") return null;
+  if (table.phase !== "playing" || table.turnId !== player.id) return null;
+  if (!player.inHand || player.folded || player.allIn) return null;
+  try {
+    const rec = recommendFor(player);
+    return {
+      actions: (rec.actions || []).map((a) => ({
+        key: a.key, label: a.label, frequency: round(a.frequency, 3), tone: a.tone,
+      })),
+      equity: round(rec.equity?.equity || 0, 3),
+      potOdds: round(rec.metrics?.potOdds || 0, 3),
+      spr: round(rec.metrics?.spr || 0, 1),
+      mdf: round(rec.metrics?.mdf || 0, 3),
+      callEv: round(rec.metrics?.callEv || 0, 2),
+      sizing: rec.sizing?.label || "",
+      policySource: rec.policySource || null,
+    };
+  } catch (error) {
+    return null;
+  }
 }
 
 function actionOptionsFor(player) {
