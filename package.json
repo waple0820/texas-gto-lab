@@ -14,6 +14,8 @@
     "test:strategy-audit": "node test/strategy-audit.test.js",
     "test:solver": "python3 scripts/solver/river_cfr.py --self-test && python3 scripts/solver/turn_cfr.py --self-test && python3 scripts/solver/solver_torch.py --self-test && python3 scripts/solver/turn_torch.py --self-test && python3 scripts/solver/multiraise_tree.py --self-test",
     "train:policy": "python3 scripts/train-policy.py",
+    "validate:heads-up": "node scripts/heads-up-validate.js",
+    "validate:six-max": "node scripts/sixmax-preflop-validate.js",
     "solve:river": "python3 scripts/solver/river_cfr.py",
     "solve:turn": "python3 scripts/solver/turn_cfr.py",
     "solve:gpu": "python3 scripts/solver/solver_torch.py",

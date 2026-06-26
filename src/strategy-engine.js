@@ -474,7 +474,7 @@ function applyLinePressure(actions, { equity, metrics, profile, rangeModel, line
   return normalizeActions(next);
 }
 
-function strategyOpenAction({ equity, metrics, profile, position, context, rangeModel }) {
+function strategyOpenAction({ equity, metrics, profile, position, context, tableSize, rangeModel }) {
   const draws = profile.draws;
   const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
   const positionBoost = POSITION_EDGE[position] || 0;
@@ -488,6 +488,7 @@ function strategyOpenAction({ equity, metrics, profile, position, context, range
       handCode: profile.handCode,
       position,
       context,
+      tableSize,
       stackBb: metrics.effectiveStack,
     });
   }
@@ -533,15 +534,16 @@ function strategyOpenAction({ equity, metrics, profile, position, context, range
   ]);
 }
 
-function strategyCheckOption({ equity, metrics, profile, position, rangeModel }) {
+function strategyCheckOption({ equity, metrics, profile, position, tableSize, rangeModel }) {
   if (profile.street !== "preflop") {
-    return strategyOpenAction({ equity, metrics, profile, position, context: "single-raised", rangeModel });
+    return strategyOpenAction({ equity, metrics, profile, position, context: "single-raised", tableSize, rangeModel });
   }
 
   return preflopStrategyActions({
     handCode: profile.handCode,
     position,
     context: "check-option",
+    tableSize,
     stackBb: metrics.effectiveStack,
   });
 }
@@ -629,16 +631,23 @@ export function recommendStrategy({
           rng,
         })
       : null;
-  const heuristicActions =
+  const preflopActions =
     profile.street === "preflop"
-      ? hasFreeCheckOption(context)
-        ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
-        : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
-      : metrics.toCall > 0
-        ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
-        : hasFreeCheckOption(context)
-          ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, rangeModel })
-          : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, rangeModel });
+      ? preflopStrategyActions({
+          handCode: profile.handCode,
+          position,
+          context,
+          tableSize,
+          stackBb: metrics.effectiveStack,
+        })
+      : null;
+  const heuristicActions =
+    preflopActions ||
+    (metrics.toCall > 0
+      ? strategyFacingBet({ equity: equityResult.equity, metrics, profile, position, context, rangeModel })
+      : hasFreeCheckOption(context)
+        ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, tableSize, rangeModel })
+        : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, tableSize, rangeModel }));
   const trained = applyTrainedPolicy({
     actions: heuristicActions,
     board,
