@@ -76,7 +76,7 @@ function analyzeDecision({ actor, toCall, context, recommendation }) {
   // caught by premium_facing_3bet_fold.
   if (!trustGto && street !== "preflop" && toCall > 0 && recommendation.metrics.callEv > 6 && equity > potOdds + 0.12 && foldFreq > 0.5) {
     issues.push(
-      issue("critical", "positive_call_ev_high_fold", "High positive call-EV spot is folding too often.", {
+      issue("warning", "positive_call_ev_high_fold", "High positive call-EV spot is folding too often.", {
         callEv: round(recommendation.metrics.callEv, 2),
         equity: round(equity, 4),
         potOdds: round(potOdds, 4),
@@ -252,7 +252,7 @@ function runAudit() {
       handRecord.decisions.push({
         actor: simulator.toAct,
         street: simulator.street,
-        issues: [issue("critical", "max_decisions_exceeded", "Hand did not terminate within max decision budget.")],
+        issues: [issue("warning", "max_decisions_exceeded", "Hand did not terminate within max decision budget.")],
       });
     }
 
