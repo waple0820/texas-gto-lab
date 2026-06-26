@@ -32,6 +32,21 @@ const ACTION_LABELS = {
   jam: { key: "jam", label: "全压", tone: "strong" },
 };
 
+// Mirror trained-policy-runtime.drawStrength (fed by poker-core.analyzeDraws,
+// which the engine already computed into profile.draws). Parity with
+// gen_turn_dataset.draw_strength.
+function drawStrength(draws = {}) {
+  return clamp(
+    (draws.flushDraw ? 0.13 : 0)
+      + (draws.openEnded ? 0.11 : 0)
+      + (draws.straightDraw && !draws.openEnded ? 0.07 : 0)
+      + (draws.backdoorFlush ? 0.035 : 0)
+      + Math.min(0.08, (draws.overcards || 0) * 0.036),
+    0,
+    0.28,
+  );
+}
+
 function histogramMean(hist) {
   return hist.reduce((sum, v, i) => sum + ((i + 0.5) / hist.length) * v, 0);
 }
@@ -106,7 +121,7 @@ function buildFeatures({ hero, board, equity, hist, profile, metrics, position, 
     pot_odds: 0, spr_norm: spr,
     street_flop: 0, street_turn: 1, street_river: 0,
     position_signal: POSITION_SIGNAL[position] ?? 0.5,
-    to_call_flag: 0, made_strength: made, draw_strength: 0,
+    to_call_flag: 0, made_strength: made, draw_strength: drawStrength(profile.draws),
     wetness: wet, paired, monotone, connected,
     range_advantage: advantage, blockers, range_percentile: percentile,
     range_weight: rangeWeight, range_coverage: cov,
@@ -144,13 +159,12 @@ function forward(values) {
 
 // Distilled GTO policy for TURN decisions: open (no call, 5 actions) and facing a
 // bet (3 actions read from the first 3 of the 5 outputs, then renormalized).
-// Readiness gate: distill-turn-v1's FACING model generalizes well (held-out
-// TV 0.147) but the OPEN model does not yet (held-out TV 0.198 vs the river's
-// ~0.10), and the turn-decision A/B vs heuristic is a wash. Until the open model
-// improves (draw-strength feature, SPR handling, more boards), keep the engine's
-// heuristic turn play — no regression. The full pipeline (gen_turn_dataset.py,
-// eval_turn.py, engine_turn_exploitability.py) stays ready to retrain + reflip.
-const TURN_DISTILL_READY = false;
+// Readiness gate. distill-turn-v2 adds the draw_strength feature (turn betting
+// hinges on draws, which raw equity doesn't separate) and clears the bar:
+// held-out facing TV 0.113, open TV 0.180, and the turn-decision A/B beats the
+// heuristic on every board tested (ON ~23.5% vs OFF ~29.6% pot — ~6pp closer to
+// GTO). v1 (no draws) was a wash. This gate stays as the kill-switch for retrains.
+const TURN_DISTILL_READY = true;
 
 export function distilledTurnActions({ hero, board, equity, equityHistogram, profile, metrics, position }) {
   if (!TURN_DISTILL_READY) return null;
