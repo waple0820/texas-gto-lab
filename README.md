@@ -6,13 +6,22 @@ A Texas Hold'em strategy lab with an equity calculator, a mixed strategy engine,
 
 ## GTO solver track
 
-Beyond the heuristic engine, the project now has **exact CFR(+) solvers** for the
+Beyond the heuristic engine, the project has **exact CFR(+) solvers** for the
 river, turn, and flop with **measured exploitability** (the real distance-to-GTO
-metric). The solved strategies feed back into the product: on covered river spots
-the engine plays the exact equilibrium, dropping its exploitability from **28.7%
-to 0.14% of pot**. See [docs/GTO_SOLVER.md](docs/GTO_SOLVER.md) for the full
-methodology, results, and `npm run` commands (`test:solver`, `solve:gpu`,
-`measure:engine`, `export:solved`).
+metric), and the solved strategies feed back into the live product:
+
+- **Exact GTO** on covered river spots: the engine plays the equilibrium per
+  combo, dropping exploitability from **28.7% to 0.14% of pot** (5 canonical
+  textures shipped).
+- **Generalized GTO** everywhere else on the river: a network distilled from the
+  exact solver plays open *and* facing decisions, generalizing to unseen boards
+  (held-out TV ~0.12 from equilibrium). An A/B exploitability test took an unseen
+  spot from **29.7% (heuristic) to 9.0% of pot** — 3.3× closer to GTO — so it is
+  **enabled by default**, with exploitative line-pressure layered on top.
+
+See [docs/GTO_SOLVER.md](docs/GTO_SOLVER.md) for the full methodology, results, and
+`npm run` commands (`test:solver`, `solve:gpu`, `measure:engine`, `export:solved`,
+`gen:dataset`, `train:distill`, `eval:unified`).
 
 ## Deploy
 
