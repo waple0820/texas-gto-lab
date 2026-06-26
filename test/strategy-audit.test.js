@@ -70,7 +70,11 @@ function analyzeDecision({ actor, toCall, context, recommendation }) {
   if (street === "preflop" && context === "unopened" && PREMIUM.has(handCode) && top?.key !== "raise") {
     issues.push(issue("critical", "premium_unopened_not_raise", "Premium unopened preflop hand is not raising first.", { handCode, top: top?.key }));
   }
-  if (!trustGto && toCall > 0 && recommendation.metrics.callEv > 6 && equity > potOdds + 0.12 && foldFreq > 0.5) {
+  // Skip preflop: this check estimates call-EV from equity vs a WIDE range, which
+  // is badly wrong preflop where 3bet/raise ranges are narrow and strong (folding
+  // e.g. AJo to a 3bet is often correct). Premium preflop over-folds are still
+  // caught by premium_facing_3bet_fold.
+  if (!trustGto && street !== "preflop" && toCall > 0 && recommendation.metrics.callEv > 6 && equity > potOdds + 0.12 && foldFreq > 0.5) {
     issues.push(
       issue("critical", "positive_call_ev_high_fold", "High positive call-EV spot is folding too often.", {
         callEv: round(recommendation.metrics.callEv, 2),
