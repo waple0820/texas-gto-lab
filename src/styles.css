@@ -1160,6 +1160,10 @@ button:focus-visible {
   font-size: 13px;
 }
 
+.mp-seat-head strong {
+  flex: 1;
+}
+
 .mp-seat-head span {
   min-height: 22px;
   padding: 0 7px;
@@ -1168,6 +1172,44 @@ button:focus-visible {
   color: #dce9e1;
   font-size: 11px;
   font-weight: 800;
+}
+
+/* Bot personality tag (岩石 / 松凶 / 跟注站 …) — signals each opponent's style. */
+.seat-style {
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(215, 168, 77, 0.16);
+  border: 1px solid rgba(215, 168, 77, 0.4);
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Live GTO decision station shown above the action buttons on the hero's turn.
+   Reuses .action-mix / .metric-grid / .policy-source-row from the lab readout so
+   it matches the analysis surface, framed in the GTO green accent. */
+.mp-advice {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(67, 184, 131, 0.38);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(67, 184, 131, 0.09), rgba(67, 184, 131, 0.02));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+}
+
+.mp-advice .subhead strong {
+  color: var(--green-2);
+}
+
+.mp-advice .action-mix {
+  gap: 6px;
+}
+
+.mp-advice .metric-grid {
+  gap: 6px;
 }
 
 .mp-seat-meta {
