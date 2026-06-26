@@ -57,13 +57,19 @@ np.seterr(over="ignore", invalid="ignore", divide="ignore")
 # ----------------------------------------------------------------------------
 
 
-def _tag_river_showdowns(node: Node, river_card: int):
-    """Mark every showdown in a river subtree with the dealt river card."""
+def _tag_river_terminals(node: Node, river_card: int, base: float):
+    """Mark every terminal in a river subtree with the dealt river card and the
+    `base` chips each player already put in on the turn. The river pot is
+    turn_pot + 2*base, so terminal payoffs must add `base` (see _showdown_util /
+    _fold_util) — otherwise turn bets are not rewarded at the river showdown."""
     if node.kind == "showdown":
         node.sign_kind = "river"
         node.river_card = river_card
+        node.base = base
+    elif node.kind == "fold":
+        node.base = base
     for child in node.children:
-        _tag_river_showdowns(child, river_card)
+        _tag_river_terminals(child, river_card, base)
 
 
 def build_two_street(pot: float, stack: float, turn_bets: list[float],
@@ -88,7 +94,7 @@ def build_two_street(pot: float, stack: float, turn_bets: list[float],
                     chance.children = []
                     for r in river_cards:
                         sub = build_tree(river_pot, river_stack, river_bets)
-                        _tag_river_showdowns(sub, r)
+                        _tag_river_terminals(sub, r, invested)
                         chance.children.append(sub)
                     new_children.append(chance)
             else:
@@ -186,16 +192,18 @@ class TurnSolver:
 
     def _showdown_util(self, node: Node, reach_opp: np.ndarray, player: int) -> np.ndarray:
         sign = self._sign_for(node)
-        amount = self.pot / 2.0 + node.invested
+        base = getattr(node, "base", 0.0)  # turn-street chips folded into the river pot
+        amount = self.pot / 2.0 + base + node.invested
         if player == OOP:
             return (sign @ reach_opp) * amount
         return -(reach_opp @ sign) * amount
 
     def _fold_util(self, node: Node, reach_opp: np.ndarray, player: int) -> np.ndarray:
+        base = getattr(node, "base", 0.0)
         if node.folder == IP:
-            g = self.pot / 2.0 + node.fold_invested_ip
+            g = self.pot / 2.0 + base + node.fold_invested_ip
         else:
-            g = -(self.pot / 2.0 + node.fold_invested_oop)
+            g = -(self.pot / 2.0 + base + node.fold_invested_oop)
         if player == OOP:
             return (self.valid @ reach_opp) * g
         return (reach_opp @ self.valid) * (-g)
@@ -372,8 +380,8 @@ def main():
 
 def _self_test() -> int:
     cases = [
-        ("Kh 9d 4s 2c", 10.0, 15.0, [0.75], [0.75], 300, 120, 0.02),
-        ("As Ks Qh 7d", 8.0, 12.0, [1.0], [0.75], 300, 120, 0.02),
+        ("Kh 9d 4s 2c", 10.0, 15.0, [0.75], [0.75], 500, 120, 0.02),
+        ("As Ks Qh 7d", 8.0, 12.0, [1.0], [0.75], 500, 120, 0.02),
     ]
     ok = True
     for board_text, pot, stack, tb, rb, iters, maxc, threshold in cases:
