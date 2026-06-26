@@ -1,0 +1,1 @@
+export const distilledFlopArtifact = {"enabled":false,"passed":false,"version":"distill-flop-pending","featureNames":[],"actionSets":{"open":["check","bet-mid"],"facing":["fold","call","jam"]},"model":{"type":"mlp-softmax","layers":[]}};

@@ -23,6 +23,8 @@ import { distilledOpenActions } from "./distilled-policy.js";
 import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
 import { distilledTurnActions } from "./distilled-turn-policy.js";
 import { distilledTurnArtifact } from "./distilled-turn-artifact.js";
+import { distilledFlopActions } from "./distilled-flop-policy.js";
+import { distilledFlopArtifact } from "./distilled-flop-artifact.js";
 
 const POSITION_EDGE = {
   UTG: -0.05,
@@ -740,7 +742,18 @@ export function recommendStrategy({
         metrics,
         position,
       });
-  const distilledActions = distilledRiverActions || distilledTurned;
+  const distilledFlopped = solvedActions || distilledRiverActions || distilledTurned
+    ? null
+    : distilledFlopActions({
+        hero,
+        board,
+        equity: equityResult.equity,
+        equityHistogram,
+        profile,
+        metrics,
+        position,
+      });
+  const distilledActions = distilledRiverActions || distilledTurned || distilledFlopped;
   const approximateActions = protectPositiveCallValue(trained?.actions || heuristicActions, {
     equity: equityResult.equity,
     metrics,
@@ -757,7 +770,7 @@ export function recommendStrategy({
   const policySource = solvedActions
     ? { type: "solved", version: solvedRiverArtifact.version }
     : distilledActions
-      ? { type: "distilled", version: (distilledRiverActions ? distilledPolicyArtifact : distilledTurnArtifact).version }
+      ? { type: "distilled", version: (distilledRiverActions ? distilledPolicyArtifact : distilledTurned ? distilledTurnArtifact : distilledFlopArtifact).version }
       : trained
       ? {
           type: "trained",
