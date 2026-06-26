@@ -34,33 +34,33 @@ OPEN_LABELS = ["check", "bet-small", "bet-mid", "bet-big", "bet-over"]
 FACING_LABELS = ["fold", "call", "raise-small", "raise-big", "jam"]
 
 
-def build_multiraise_river(pot, stack, bet_sizes, raise_mults=(2.0, 4.0)):
-    def showdown(inv):
-        return Node(kind="showdown", invested=float(inv))
-
+def build_multiraise_betting(pot, stack, bet_sizes, raise_mults, make_continue, make_allin):
+    """One OOP-first betting round with the 5-action facing set (one re-raise then
+    jam). Terminals are produced by callbacks so the same round serves any street:
+      make_continue(invested) -> terminal/subtree when both match with stack behind
+                                  (check/check, call, re-raise call)
+      make_allin(invested)    -> terminal/subtree when the line is all-in
+    For the river both callbacks return a showdown; for the turn, make_continue
+    returns the next-street subgame and make_allin a runout.
+    """
     def fold(folder, inv_oop, inv_ip):
         return Node(kind="fold", folder=folder, fold_invested_oop=float(inv_oop), fold_invested_ip=float(inv_ip))
 
     def inv_pair(a, a_inv, b_inv):
-        """return (inv_oop, inv_ip) given actor a's invest and opponent's."""
         return (a_inv, b_inv) if a == OOP else (b_inv, a_inv)
 
     def faces_allin(responder, allin_inv, responder_inv):
-        # responder faces opponent all-in at allin_inv (responder currently responder_inv)
         opp = 1 - responder
-        io, ii = inv_pair(opp, allin_inv, responder_inv)  # if responder folds, opp(raiser) had allin_inv
-        node = Node(kind="decision", player=responder, actions=["fold", "call"],
-                    children=[fold(responder, io, ii), showdown(allin_inv)])
-        return node
+        io, ii = inv_pair(opp, allin_inv, responder_inv)
+        return Node(kind="decision", player=responder, actions=["fold", "call"],
+                    children=[fold(responder, io, ii), make_allin(allin_inv)])
 
     def faces_reraise(responder, raise_to, responder_inv):
-        # responder (the original bettor) faces a raise to raise_to
         opp = 1 - responder
         io, ii = inv_pair(opp, raise_to, responder_inv)
-        children = [fold(responder, io, ii), showdown(raise_to)]
+        children = [fold(responder, io, ii), make_continue(raise_to)]
         actions = ["fold", "call"]
         if raise_to < stack - 1e-9:
-            # responder can jam over the raise
             actions.append("jam")
             children.append(faces_allin(opp, stack, raise_to))
         return Node(kind="decision", player=responder, actions=actions, children=children)
@@ -69,43 +69,45 @@ def build_multiraise_river(pot, stack, bet_sizes, raise_mults=(2.0, 4.0)):
         bettor = 1 - actor
         inv_bettor = prior_inv + bet
         inv_caller = prior_inv
-        io, ii = inv_pair(bettor, inv_bettor, inv_caller)  # if actor folds, bettor had inv_bettor
-        children = [fold(actor, io, ii), showdown(inv_bettor)]
+        io, ii = inv_pair(bettor, inv_bettor, inv_caller)
+        children = [fold(actor, io, ii), make_continue(inv_bettor)]
         actions = ["fold", "call"]
         raise_tos = []
         for mult in raise_mults:
             r = min(stack, inv_bettor + mult * bet)
             if r > inv_bettor + 1e-9 and r < stack - 1e-9 and (not raise_tos or r > raise_tos[-1] + 1e-9):
                 raise_tos.append(r)
-        labels = ["raise-small", "raise-big"]
         for i, r in enumerate(raise_tos[:2]):
-            actions.append(labels[i])
+            actions.append(["raise-small", "raise-big"][i])
             children.append(faces_reraise(bettor, r, inv_bettor))
-        # jam
         actions.append("jam")
         children.append(faces_allin(bettor, stack, inv_bettor))
         return Node(kind="decision", player=actor, actions=actions, children=children)
 
-    def ip_after_check():
-        children = [showdown(0.0)]
+    def opener(player):
+        children = [make_continue(0.0)] if player == IP else [_ip_after_check()]
+        # OOP opener: check -> IP decision; IP opener (after OOP check): check -> continue
         actions = ["check"]
         for frac in bet_sizes:
             actions.append(f"bet{frac:g}")
-            children.append(faces_bet(OOP, pot * frac, 0.0))
-        node = Node(kind="decision", player=IP, actions=actions, children=children)
+            children.append(faces_bet(1 - player, pot * frac, 0.0))  # opponent faces the bet
+        node = Node(kind="decision", player=player, actions=actions, children=children)
         node.pot_ctx = pot
         node.to_call_ctx = 0.0
         return node
 
-    children = [ip_after_check()]
-    actions = ["check"]
-    for frac in bet_sizes:
-        actions.append(f"bet{frac:g}")
-        children.append(faces_bet(IP, pot * frac, 0.0))
-    root = Node(kind="decision", player=OOP, actions=actions, children=children)
-    root.pot_ctx = pot
-    root.to_call_ctx = 0.0
+    def _ip_after_check():
+        return opener(IP)
+
+    root = opener(OOP)
     return root
+
+
+def build_multiraise_river(pot, stack, bet_sizes, raise_mults=(2.0, 4.0)):
+    def showdown(inv):
+        return Node(kind="showdown", invested=float(inv))
+
+    return build_multiraise_betting(pot, stack, bet_sizes, raise_mults, showdown, showdown)
 
 
 def solve_multiraise(board, pot, stack, bet_sizes, iterations, raise_mults=(2.0, 4.0)):
