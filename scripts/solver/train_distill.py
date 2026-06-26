@@ -52,6 +52,12 @@ def main():
     parser.add_argument("--seed", type=int, default=20260626)
     parser.add_argument("--version", default="distill-open-river-v1")
     parser.add_argument("--max-kl", type=float, default=0.06, help="export gate: val KL <= this")
+    parser.add_argument("--applies-to", default="open", help="artifact appliesTo tag (open/turn/...)")
+    parser.add_argument("--export-name", default="distilledPolicyArtifact",
+                        help="JS export const name (use distilledTurnArtifact for the turn model)")
+    parser.add_argument("--facing-actions", default="",
+                        help="comma-separated facing action set; default reads npz facing_actions "
+                             "or falls back to the river 5-action set")
     args = parser.parse_args()
 
     torch, nn = import_torch()
@@ -64,6 +70,12 @@ def main():
     Y = data["Y"].astype(np.float32)
     feature_names = [str(s) for s in data["feature_names"]]
     action_names = [str(s) for s in data["action_names"]]
+    if args.facing_actions:
+        facing_actions = [s for s in args.facing_actions.split(",") if s]
+    elif "facing_actions" in data:
+        facing_actions = [str(s) for s in data["facing_actions"]]
+    else:
+        facing_actions = ["fold", "call", "raise-small", "raise-big", "jam"]
     Y = Y / np.clip(Y.sum(axis=1, keepdims=True), 1e-9, None)
     print(f"data X={X.shape} Y={Y.shape} features={len(feature_names)} actions={action_names}")
 
@@ -118,15 +130,15 @@ def main():
         "enabled": True, "passed": bool(passed), "version": args.version,
         "trainedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "policyKind": "softmax-distill", "blend": 1.0,
-        "appliesTo": "open",
+        "appliesTo": args.applies_to,
         "featureNames": feature_names,
-        "actionSets": {"open": action_names, "facing": ["fold", "call", "raise-small", "raise-big", "jam"]},
+        "actionSets": {"open": action_names, "facing": facing_actions},
         "validation": {"val_kl": round(val_kl, 6), "rows": int(len(X))},
         "model": {"type": "mlp-softmax", "activation": "relu", "layers": layers},
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(f"export const distilledPolicyArtifact = {json.dumps(artifact, separators=(',', ':'))};\n")
+    out.write_text(f"export const {args.export_name} = {json.dumps(artifact, separators=(',', ':'))};\n")
     print(f"\nval_kl={val_kl:.5f} passed={passed} -> wrote {out} ({out.stat().st_size/1024:.0f} KB) "
           f"in {time.time()-started:.1f}s")
     return 0 if passed else 1
