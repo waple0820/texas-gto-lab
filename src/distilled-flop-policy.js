@@ -149,9 +149,11 @@ function forward(values) {
   return exps.map((x) => x / total);
 }
 
-// Readiness gate. Flipped on once a flop A/B confirms the distilled play beats the
-// heuristic (mirrors the turn). Until then the engine keeps its heuristic flop play.
-const FLOP_DISTILL_READY = false;
+// Readiness gate. distill-flop-v1 (with draw_strength — backdoors/draws are live
+// on the flop) clears the bar: held-out facing TV 0.066 / open TV 0.037, and the
+// flop-decision A/B beats the heuristic on every board tested (ON ~15% vs OFF
+// ~27% pot — ~12pp closer to GTO). Stays as the kill-switch for future retrains.
+const FLOP_DISTILL_READY = true;
 
 // Distilled GTO policy for FLOP decisions: open (check / bet-mid, first 2 of the 3
 // outputs) and facing a bet (fold / call / jam, all 3), each renormalized.
