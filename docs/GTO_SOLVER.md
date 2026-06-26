@@ -83,7 +83,10 @@ npm run test:solver
 ```
 
 Asserts CFR+ drives exploitability below 0.6% of pot on fixed boards. This is the
-convergence guard for the solver and runs as part of local validation.
+convergence guard for the solver and runs as part of local validation. The torch
+ports are optional in lightweight environments; `npm run test:solver` skips them
+when PyTorch is absent, while `npm run test:solver:torch` fails loudly and should
+be used on the 5090 training host.
 
 ## Stage 2 — Turn → river two-street solve (done)
 
