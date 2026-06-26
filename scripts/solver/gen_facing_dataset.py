@@ -26,6 +26,7 @@ import numpy as np
 from gen_solved_dataset import (
     FEATURE_NAMES, FEATURE_INDEX, EQUITY_BUCKET_NAMES, MADE_BY_CATEGORY, POSITION_SIGNALS,
     rank_of, board_texture, exact_equities, equity_histogram, made_category, random_board,
+    blocker_features,
 )
 from river_cfr import all_combos
 from multiraise_tree import solve_multiraise, FACING_LABELS
@@ -69,6 +70,11 @@ def facing_features(combos, board, equities, hist, wet, paired, mono, conn, pos_
         row[FEATURE_INDEX["range_percentile"]] = percentile[i]
         row[FEATURE_INDEX["range_weight"]] = float(np.clip(0.22 + percentile[i] * 0.62 + advantage * 0.16, 0, 1))
         row[FEATURE_INDEX["range_coverage"]] = cov
+        fl, nutfl, top, pblk = blocker_features(combo, board)
+        row[FEATURE_INDEX["flush_blocker"]] = fl
+        row[FEATURE_INDEX["nut_flush_blocker"]] = nutfl
+        row[FEATURE_INDEX["top_blocker"]] = top
+        row[FEATURE_INDEX["board_pair_blocker"]] = pblk
         row[FEATURE_INDEX["facing_bet"]] = 1.0
     return X
 
