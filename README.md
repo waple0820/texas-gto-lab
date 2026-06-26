@@ -18,6 +18,12 @@ metric), and the solved strategies feed back into the live product:
   (held-out TV ~0.12 from equilibrium). An A/B exploitability test took an unseen
   spot from **29.7% (heuristic) to 9.0% of pot** — 3.3× closer to GTO — so it is
   **enabled by default**, with exploitative line-pressure layered on top.
+- **Generalized GTO on the turn**: a second network distilled from the exact
+  two-street turn solver (with a `draw_strength` feature — turn betting hinges on
+  draws) plays open *and* facing turn decisions. Held-out TV ~0.18 open / ~0.11
+  facing; a turn-decision A/B beats the heuristic on every board tested
+  (**~23.5% vs ~29.6% of pot**, ~6pp closer to GTO), so it is **enabled** for the
+  turn (river and solved tables unchanged).
 
 See [docs/GTO_SOLVER.md](docs/GTO_SOLVER.md) for the full methodology, results, and
 `npm run` commands (`test:solver`, `solve:gpu`, `measure:engine`, `export:solved`,
