@@ -86,6 +86,42 @@ def turn_equities(board, combos, valid):
     return num / np.maximum(den, 1e-9)
 
 
+def draw_strength(combo, board):
+    """Reproduce poker-core.analyzeDraws + trained-policy-runtime.drawStrength
+    exactly (card c: suit=c//13, rank=c%13+2). Turn draws are live and drive
+    open betting (semi-bluff draws / value+protection made hands), so the turn
+    open model needs this signal that raw equity doesn't separate."""
+    cards = list(combo) + list(board)
+    suit_counts = {}
+    for c in cards:
+        suit_counts[c // 13] = suit_counts.get(c // 13, 0) + 1
+    max_suit = max(suit_counts.values()) if suit_counts else 0
+    vals = sorted({(c % 13) + 2 for c in cards})
+    if 14 in vals:
+        vals = [1] + vals
+    valset = set(vals)
+    straight_draw = False
+    open_ended = False
+    for low in range(1, 11):
+        window = [low, low + 1, low + 2, low + 3, low + 4]
+        hits = [r for r in window if r in valset]
+        if len(hits) >= 4:
+            straight_draw = True
+            missing = next((r for r in window if r not in valset), None)
+            if missing == low or missing == low + 4:
+                open_ended = True
+    board_high = max((c % 13) + 2 for c in board) if board else 0
+    overcards = sum(1 for c in combo if (c % 13) + 2 > board_high)
+    flush_draw = len(board) >= 3 and max_suit == 4
+    backdoor_flush = len(board) == 3 and max_suit == 3
+    ds = ((0.13 if flush_draw else 0.0)
+          + (0.11 if open_ended else 0.0)
+          + (0.07 if (straight_draw and not open_ended) else 0.0)
+          + (0.035 if backdoor_flush else 0.0)
+          + min(0.08, overcards * 0.036))
+    return float(np.clip(ds, 0.0, 0.28))
+
+
 def turn_features(combos, board, equities, hist, wet, paired, mono, conn, stack,
                   pos_signal, facing, pot_odds):
     """Mirror gen_solved_dataset.build_features but with street_turn=1 and a
@@ -112,6 +148,7 @@ def turn_features(combos, board, equities, hist, wet, paired, mono, conn, stack,
         row[FEATURE_INDEX["street_turn"]] = 1.0
         row[FEATURE_INDEX["position_signal"]] = pos_signal
         row[FEATURE_INDEX["made_strength"]] = cat
+        row[FEATURE_INDEX["draw_strength"]] = draw_strength(combo, board)
         row[FEATURE_INDEX["wetness"]] = wet
         row[FEATURE_INDEX["paired"]] = paired
         row[FEATURE_INDEX["monotone"]] = mono
