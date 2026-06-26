@@ -149,11 +149,14 @@ function forward(values) {
   return exps.map((x) => x / total);
 }
 
-// Readiness gate. distill-flop-v1 (with draw_strength — backdoors/draws are live
-// on the flop) clears the bar: held-out facing TV 0.066 / open TV 0.037, and the
-// flop-decision A/B beats the heuristic on every board tested (ON ~15% vs OFF
-// ~27% pot — ~12pp closer to GTO). Stays as the kill-switch for future retrains.
-const FLOP_DISTILL_READY = true;
+// Readiness gate — OFF. distill-flop-v1 looked great IN-DISTRIBUTION (A/B ON ~15%
+// vs OFF ~27% pot) but was trained only on SHALLOW stacks (SPR ~1.7-2.5), so it
+// extrapolates badly to the deep-SPR flops the engine commonly faces (e.g. a 95bb
+// single-raised pot, SPR ~16, where it wrongly checks ~94%). The A/B was misleading
+// because it tested at the same shallow SPR as training. Pending a retrain over a
+// realistic deep-SPR stack range, keep the engine's heuristic flop play (no
+// regression). The pipeline stays ready to regenerate + reflip.
+const FLOP_DISTILL_READY = false;
 
 // Distilled GTO policy for FLOP decisions: open (check / bet-mid, first 2 of the 3
 // outputs) and facing a bet (fold / call / jam, all 3), each renormalized.
