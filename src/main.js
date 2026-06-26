@@ -54,7 +54,9 @@ const PRACTICE_SPOTS = [
   { id: "sb-rfi", label: "SB RFI", position: "SB", context: "unopened" },
   { id: "hj-vs-utg", label: "HJ vs UTG open", position: "HJ", context: "facing-open", aggressorPosition: "UTG" },
   { id: "co-vs-utg", label: "CO vs UTG open", position: "CO", context: "facing-open", aggressorPosition: "UTG" },
+  { id: "co-vs-hj", label: "CO vs HJ open", position: "CO", context: "facing-open", aggressorPosition: "HJ" },
   { id: "btn-vs-utg", label: "BTN vs UTG open", position: "BTN", context: "facing-open", aggressorPosition: "UTG" },
+  { id: "btn-vs-hj", label: "BTN vs HJ open", position: "BTN", context: "facing-open", aggressorPosition: "HJ" },
   { id: "btn-vs-co", label: "BTN vs CO open", position: "BTN", context: "facing-open", aggressorPosition: "CO" },
   { id: "sb-vs-btn", label: "SB vs BTN open", position: "SB", context: "blind-defense", aggressorPosition: "BTN" },
   { id: "bb-vs-utg", label: "BB vs UTG open", position: "BB", context: "blind-defense", aggressorPosition: "UTG" },
@@ -65,6 +67,7 @@ const PRACTICE_SPOTS = [
   { id: "co-vs-btn-3bet", label: "CO vs BTN 3bet", position: "CO", context: "facing-3bet", aggressorPosition: "BTN" },
   { id: "btn-vs-sb-3bet", label: "BTN vs SB 3bet", position: "BTN", context: "facing-3bet", aggressorPosition: "SB" },
   { id: "sb-vs-bb-3bet", label: "SB vs BB 3bet", position: "SB", context: "facing-3bet", aggressorPosition: "BB" },
+  { id: "btn-sqz-utg-co", label: "BTN squeeze vs UTG + CO", position: "BTN", context: "squeeze", aggressorPosition: "UTG", callerPositions: ["CO"] },
 ];
 
 const practiceState = {
@@ -718,6 +721,7 @@ function practiceSpotLabel(spot) {
   if (!spot) return "";
   if (spot.context === "unopened") return `${spot.position} 首入池`;
   if (spot.context === "facing-3bet") return `${spot.position} 面对 ${spot.aggressorPosition} 3bet`;
+  if (spot.context === "squeeze") return `${spot.position} squeeze vs ${spot.aggressorPosition} + ${(spot.callerPositions || []).join("/")}`;
   return `${spot.position} 面对 ${spot.aggressorPosition} open`;
 }
 
@@ -725,6 +729,7 @@ function practiceContextMeta(spot) {
   if (!spot) return "";
   if (spot.context === "unopened") return "6-max 100bb · RFI";
   if (spot.context === "facing-3bet") return "6-max 100bb · open 后面对 3bet";
+  if (spot.context === "squeeze") return "6-max 100bb · open + cold call 后 squeeze";
   return "6-max 100bb · opener-specific 防守";
 }
 
@@ -738,6 +743,7 @@ function generatePracticeQuestion() {
     position: spot.position,
     context: spot.context,
     aggressorPosition: spot.aggressorPosition,
+    callerPositions: spot.callerPositions,
     tableSize: 6,
     stackBb: 100,
   });
@@ -807,7 +813,7 @@ function renderPracticeActions(question) {
   const buttons = [
     { key: "fold", label: "弃牌" },
     { key: "call", label: "跟注" },
-    { key: "raise", label: question?.context === "unopened" ? "Open" : question?.context === "facing-3bet" ? "4bet" : "3bet" },
+    { key: "raise", label: question?.context === "unopened" ? "Open" : question?.context === "facing-3bet" ? "4bet" : question?.context === "squeeze" ? "Squeeze" : "3bet" },
     { key: "jam", label: "Jam" },
   ];
   $("#practice-actions").innerHTML = buttons

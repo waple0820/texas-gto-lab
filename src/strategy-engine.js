@@ -339,6 +339,14 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
       ]);
     }
     if (toCall > 0) {
+      if (context === "squeeze") {
+        const primary = sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "多人底池挤压", 0.38);
+        return makeSizing(primary, "面对 open + cold call 使用更大 squeeze 尺度", [
+          sizeOption("4x squeeze", Math.max(toCall * 4, 8), "较小挤压"),
+          sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "标准挤压"),
+          sizeOption("5.5x squeeze", Math.max(toCall * 5.5, 11), "OOP / 多 caller 压力"),
+        ]);
+      }
       const outOfPosition = position === "SB" || position === "BB";
       const primary = sizeOption(outOfPosition ? "4x 3bet" : "3x 3bet", Math.max(toCall * (outOfPosition ? 4 : 3), outOfPosition ? 8 : 6), outOfPosition ? "OOP 3bet" : "IP 3bet", 0.36);
       return makeSizing(primary, "面对 open 使用 IP 小 3bet、OOP 大 3bet、squeeze 加大", [
@@ -608,6 +616,8 @@ export function recommendStrategy({
   board = [],
   position = "CO",
   context = "unopened",
+  aggressorPosition,
+  callerPositions = [],
   tableSize = 6,
   stackBb = 100,
   pot = 6,
@@ -670,6 +680,8 @@ export function recommendStrategy({
           handCode: profile.handCode,
           position,
           context,
+          aggressorPosition,
+          callerPositions,
           tableSize,
           stackBb: metrics.effectiveStack,
         })

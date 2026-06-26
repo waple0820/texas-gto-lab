@@ -213,14 +213,20 @@ export class HoldemSimulator {
 
   contextForActor(actor, toCall) {
     if (this.street === "preflop") {
-      const onlyBlindsPosted = this.actions.every((action) => action.type === "blind");
-      if (actor === "hero" && onlyBlindsPosted && toCall <= 0.5) return "unopened";
-      if (toCall > 1.5) return "facing-3bet";
-      if (toCall > 0) return "blind-defense";
-      if (actor === "ai" || this.actions.some((action) => action.street === "preflop" && action.type === "call")) {
-        return "check-option";
+      const position = actor === "hero" ? "SB" : "BB";
+      const raises = this.actions.filter((action) => action.street === "preflop" && (action.type === "raise" || action.type === "allin"));
+      const hasLimp = this.actions.some((action) => action.street === "preflop" && action.type === "call");
+
+      if (raises.length === 0) {
+        if (position === "SB") return "unopened";
+        return hasLimp || actor === "ai" ? "check-option" : "unopened";
       }
-      return "unopened";
+      if (raises.length === 1) {
+        if (toCall <= 0) return "check-option";
+        return position === "BB" ? "blind-defense" : "facing-open";
+      }
+      if (toCall > 0) return "facing-3bet";
+      return "check-option";
     }
     if (toCall > 0 && this.currentBet >= this.pot * 0.55) return "facing-bet";
     if (toCall > 0) return "facing-raise";

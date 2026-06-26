@@ -172,6 +172,8 @@ export function preflopStrategyActions({
   position = "CO",
   context = "unopened",
   aggressorPosition,
+  callerPositions = [],
+  preflopLine,
   tableSize = 6,
   stackBb = 100,
 } = {}) {
@@ -183,6 +185,8 @@ export function preflopStrategyActions({
     position,
     context,
     aggressorPosition,
+    callerPositions,
+    preflopLine,
     tableSize,
     stackBb,
   });
@@ -191,7 +195,9 @@ export function preflopStrategyActions({
   if (context === "check-option" || context === "limped-pot" || context === "blind-check") {
     return checkOptionActions({ handCode, position, stackBb });
   }
-  if (context === "facing-3bet") return facingThreeBetActions({ handCode, position, stackBb });
-  if (context === "facing-open" || context === "blind-defense") return defendActions({ handCode, position, stackBb });
+  if (context === "facing-3bet" || context === "cold-facing-3bet" || context === "facing-squeeze" || context === "facing-4bet") {
+    return facingThreeBetActions({ handCode, position, stackBb });
+  }
+  if (context === "facing-open" || context === "blind-defense" || context === "squeeze") return defendActions({ handCode, position, stackBb });
   return openActions({ handCode, position, stackBb });
 }

@@ -15,6 +15,7 @@ import { recommendStrategy } from "../src/strategy-engine.js";
 import { HoldemSimulator } from "../src/simulator.js";
 import { trainedPolicyArtifact } from "../src/trained-policy-artifact.js";
 import { preflopStrategyActions } from "../src/preflop-policy.js";
+import { resolveSixMaxPreflopChartSource } from "../src/preflop-sixmax-table.js";
 
 assert.equal(trainedPolicyArtifact.passed, true);
 assert.equal(trainedPolicyArtifact.featureNames.length, 33);
@@ -119,6 +120,16 @@ const huButtonFold = preflopStrategyActions({
 });
 assert.equal(huButtonFold[0].key, "fold");
 
+const huButtonLimpMix = preflopStrategyActions({
+  handCode: "T2o",
+  position: "SB",
+  context: "unopened",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.ok((huButtonLimpMix.find((action) => action.key === "call")?.frequency || 0) > 0.3);
+assert.ok((huButtonLimpMix.find((action) => action.key === "fold")?.frequency || 0) > 0.5);
+
 const huBbDefend = preflopStrategyActions({
   handCode: "72s",
   position: "BB",
@@ -127,6 +138,24 @@ const huBbDefend = preflopStrategyActions({
   stackBb: 100,
 });
 assert.equal(huBbDefend[0].key, "call");
+
+const huBbVsLimpIso = preflopStrategyActions({
+  handCode: "A5s",
+  position: "BB",
+  context: "check-option",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.equal(huBbVsLimpIso[0].key, "raise");
+
+const huBbVsLimpCheck = preflopStrategyActions({
+  handCode: "72o",
+  position: "BB",
+  context: "check-option",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.equal(huBbVsLimpCheck[0].key, "check");
 
 const huButtonVsThreeBet = preflopStrategyActions({
   handCode: "A2s",
@@ -139,6 +168,12 @@ assert.deepEqual(
   huButtonVsThreeBet.map((action) => action.key),
   ["fold", "raise"],
 );
+
+const huSimulator = new HoldemSimulator({ rng: mulberry32(20260626), level: "solver" });
+assert.equal(huSimulator.getToCall("hero"), 0.5);
+assert.equal(huSimulator.contextForActor("hero", huSimulator.getToCall("hero")), "unopened");
+huSimulator.applyAction("hero", "pot");
+assert.equal(huSimulator.contextForActor("ai", huSimulator.getToCall("ai")), "blind-defense");
 
 const sixMaxUtgFold = preflopStrategyActions({
   handCode: "72o",
@@ -169,6 +204,205 @@ const sixMaxBtnVsUtg = preflopStrategyActions({
   stackBb: 100,
 });
 assert.equal(sixMaxBtnVsUtg[0].key, "raise");
+
+const sixMaxCoVsMpSource = resolveSixMaxPreflopChartSource({
+  position: "CO",
+  context: "facing-open",
+  aggressorPosition: "HJ",
+});
+assert.equal(sixMaxCoVsMpSource.provider, "pokercoaching");
+assert.equal(sixMaxCoVsMpSource.key, "CO-vs-open-MP");
+
+const sixMaxCoVsMp = preflopStrategyActions({
+  handCode: "AQs",
+  position: "CO",
+  context: "facing-open",
+  aggressorPosition: "HJ",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxCoVsMp[0].key, "raise");
+
+const sixMaxBtnVsMpSource = resolveSixMaxPreflopChartSource({
+  position: "BTN",
+  context: "facing-open",
+  aggressorPosition: "HJ",
+});
+assert.equal(sixMaxBtnVsMpSource.provider, "greenline");
+assert.equal(sixMaxBtnVsMpSource.key, "BTN-vs-open-MP");
+
+const sixMaxCoIso = preflopStrategyActions({
+  handCode: "AQo",
+  position: "CO",
+  context: "check-option",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxCoIso[0].key, "raise");
+assert.equal(resolveSixMaxPreflopChartSource({ position: "CO", context: "check-option" }).provider, "greenline");
+
+const sixMaxBtnSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "BTN",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["CO"],
+});
+assert.equal(sixMaxBtnSqueezeSource.provider, "w0uf");
+assert.equal(sixMaxBtnSqueezeSource.key, "BTN-squeeze-UTG-CO");
+
+const sixMaxBtnSqueeze = preflopStrategyActions({
+  handCode: "A5s",
+  position: "BTN",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["CO"],
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBtnSqueeze[0].key, "raise");
+
+const sixMaxBbSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "BB",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["BTN"],
+});
+assert.equal(sixMaxBbSqueezeSource.provider, "gtowizard");
+assert.equal(sixMaxBbSqueezeSource.key, "BB-squeeze-UTG-BTN");
+
+const sixMaxBbLineSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "BB",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["BTN"],
+  preflopLine: "UTG 2.5bb BTN Call BB",
+});
+assert.equal(sixMaxBbLineSqueezeSource.provider, "deepfold");
+assert.equal(sixMaxBbLineSqueezeSource.key, "BB-squeeze-UTG-BTN");
+assert.equal(sixMaxBbLineSqueezeSource.lineKey, "UTG 2.5bb BTN Call BB");
+
+const sixMaxMismatchedLineSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "BB",
+  context: "squeeze",
+  aggressorPosition: "CO",
+  callerPositions: ["BTN"],
+  preflopLine: "UTG 2.5bb BTN Call BB",
+});
+assert.equal(sixMaxMismatchedLineSqueezeSource.provider, "gtowizard");
+assert.equal(sixMaxMismatchedLineSqueezeSource.key, "BB-squeeze-CO-BTN");
+assert.equal(sixMaxMismatchedLineSqueezeSource.lineKey, undefined);
+
+const sixMaxBbLineSqueeze = preflopStrategyActions({
+  handCode: "AKs",
+  position: "BB",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["BTN"],
+  preflopLine: "UTG 2.5bb BTN Call BB",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBbLineSqueeze[0].key, "raise");
+
+const sixMaxBbGtowizardSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "BB",
+  context: "squeeze",
+  aggressorPosition: "BTN",
+  callerPositions: ["SB"],
+});
+assert.equal(sixMaxBbGtowizardSqueezeSource.provider, "gtowizard");
+assert.equal(sixMaxBbGtowizardSqueezeSource.key, "BB-squeeze-BTN-SB");
+
+const sixMaxMpGtowizardFacingSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "HJ",
+  context: "facing-squeeze",
+  aggressorPosition: "BTN",
+});
+assert.equal(sixMaxMpGtowizardFacingSqueezeSource.provider, "gtowizard");
+assert.equal(sixMaxMpGtowizardFacingSqueezeSource.key, "MP-vs-squeeze-BTN");
+
+const squeezeRecommendation = recommendStrategy({
+  hero: ["Ah", "5h"],
+  board: [],
+  position: "BTN",
+  context: "squeeze",
+  aggressorPosition: "UTG",
+  callerPositions: ["CO"],
+  tableSize: 6,
+  pot: 7,
+  toCall: 2.5,
+  stackBb: 100,
+  opponents: 2,
+  iterations: 300,
+  rng: mulberry32(31),
+});
+assert.equal(squeezeRecommendation.policySource.type, "preflop");
+assert.equal(squeezeRecommendation.actions[0].key, "raise");
+assert.match(squeezeRecommendation.sizing.label, /squeeze/);
+
+const sixMaxBbColdVsBtnThreeBetAlias = preflopStrategyActions({
+  handCode: "AKs",
+  position: "BB",
+  context: "facing-3bet",
+  aggressorPosition: "BTN",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBbColdVsBtnThreeBetAlias[0].key, "raise");
+
+const sixMaxBbColdFacingThreeBetSource = resolveSixMaxPreflopChartSource({
+  position: "BB",
+  context: "cold-facing-3bet",
+  aggressorPosition: "BTN",
+});
+assert.equal(sixMaxBbColdFacingThreeBetSource.provider, "deepfold");
+assert.equal(sixMaxBbColdFacingThreeBetSource.key, "BB-cold-vs-3bet-BTN");
+
+const sixMaxBbColdFacingThreeBet = preflopStrategyActions({
+  handCode: "AKs",
+  position: "BB",
+  context: "cold-facing-3bet",
+  aggressorPosition: "BTN",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBbColdFacingThreeBet[0].key, "raise");
+
+const sixMaxBbColdFacingTrash = preflopStrategyActions({
+  handCode: "72o",
+  position: "BB",
+  context: "cold-facing-3bet",
+  aggressorPosition: "BTN",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBbColdFacingTrash[0].key, "fold");
+
+const sixMaxCoFacingSqueezeSource = resolveSixMaxPreflopChartSource({
+  position: "CO",
+  context: "facing-squeeze",
+  aggressorPosition: "SB",
+});
+assert.equal(sixMaxCoFacingSqueezeSource.provider, "gtowizard");
+assert.equal(sixMaxCoFacingSqueezeSource.key, "CO-vs-squeeze-SB");
+
+const sixMaxUtgVsSbFourBetSource = resolveSixMaxPreflopChartSource({
+  position: "UTG",
+  context: "facing-4bet",
+  aggressorPosition: "SB",
+});
+assert.equal(sixMaxUtgVsSbFourBetSource.provider, "deepfold");
+assert.equal(sixMaxUtgVsSbFourBetSource.key, "UTG-vs-4bet-SB");
+
+const sixMaxBtnVsSbFourBetAlias = preflopStrategyActions({
+  handCode: "AKs",
+  position: "BTN",
+  context: "facing-4bet",
+  aggressorPosition: "SB",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBtnVsSbFourBetAlias[0].key, "jam");
 
 const openOption = recommendStrategy({
   hero: ["4c", "6d"],
