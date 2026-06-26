@@ -327,6 +327,7 @@ assert.ok(lowSprSizing.sizing.options[0].recommended);
 const sim = new HoldemSimulator({ rng: mulberry32(7) });
 assert.equal(sim.heroHole.length, 2);
 assert.equal(sim.aiHole.length, 2);
+assert.equal(sim.contextForActor("hero", sim.getToCall("hero")), "unopened");
 sim.playerAction("check-call");
 assert.ok(["ai", null].includes(sim.toAct));
 

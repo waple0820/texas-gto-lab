@@ -112,6 +112,12 @@ export class HoldemSimulator {
     return actor === "hero" ? this.heroBet : this.aiBet;
   }
 
+  betsSettled() {
+    if (this.heroStack <= 0.01 && this.aiStack <= 0.01) return true;
+    if (Math.abs(this.heroBet - this.aiBet) <= 0.11 && (this.heroStack <= 0.01 || this.aiStack <= 0.01)) return true;
+    return this.heroBet === this.aiBet;
+  }
+
   setActorStack(actor, value) {
     if (actor === "hero") this.heroStack = round(value, 1);
     else this.aiStack = round(value, 1);
@@ -207,6 +213,8 @@ export class HoldemSimulator {
 
   contextForActor(actor, toCall) {
     if (this.street === "preflop") {
+      const onlyBlindsPosted = this.actions.every((action) => action.type === "blind");
+      if (actor === "hero" && onlyBlindsPosted && toCall <= 0.5) return "unopened";
       if (toCall > 1.5) return "facing-3bet";
       if (toCall > 0) return "blind-defense";
       if (actor === "ai" || this.actions.some((action) => action.street === "preflop" && action.type === "call")) {
@@ -318,7 +326,7 @@ export class HoldemSimulator {
     this.log.push(`${this.actorLabel(actor)} ${toCall > 0 ? "raises" : "bets"} ${round(paid, 1)}bb${allIn ? " all-in" : ""}.`);
     this.acted = new Set([actor]);
     if (this.actorStack(this.other(actor)) <= 0.01 || this.actorStack(actor) <= 0.01) {
-      if (this.heroBet === this.aiBet) return this.runoutAndShowdown();
+      if (this.betsSettled()) return this.runoutAndShowdown();
     }
     this.toAct = this.other(actor);
     return { terminal: false };
@@ -329,7 +337,7 @@ export class HoldemSimulator {
       return this.advanceStreet();
     }
     if (this.heroStack <= 0.01 || this.aiStack <= 0.01) {
-      if (this.heroBet === this.aiBet) return this.runoutAndShowdown();
+      if (this.betsSettled()) return this.runoutAndShowdown();
     }
     this.toAct = this.other(actor);
     return { terminal: false };

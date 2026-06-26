@@ -474,6 +474,39 @@ function applyLinePressure(actions, { equity, metrics, profile, rangeModel, line
   return normalizeActions(next);
 }
 
+function capFoldFrequency(actions, maxFold, callShare = 0.72) {
+  const foldAction = actions.find((action) => action.key === "fold");
+  if (!foldAction || foldAction.frequency <= maxFold) return actions;
+
+  const excess = foldAction.frequency - maxFold;
+  const next = actions.map((action) => ({ ...action, weight: action.frequency }));
+  const fold = next.find((action) => action.key === "fold");
+  const call = next.find((action) => action.key === "call");
+  const raises = next.filter((action) => ["raise", "raise-small", "raise-big", "jam"].includes(action.key));
+  fold.weight = maxFold;
+
+  if (call) call.weight += excess * callShare;
+  const raiseLift = excess * (call ? 1 - callShare : 1);
+  const raiseTotal = raises.reduce((sum, action) => sum + action.weight, 0);
+  if (raises.length) {
+    for (const action of raises) {
+      action.weight += raiseLift * (raiseTotal > 0 ? action.weight / raiseTotal : 1 / raises.length);
+    }
+  } else if (call) {
+    call.weight += raiseLift;
+  }
+
+  return normalizeActions(next);
+}
+
+function protectPositiveCallValue(actions, { equity, metrics, profile }) {
+  if (profile.street === "preflop" || metrics.toCall <= 0) return actions;
+  const edge = equity - metrics.potOdds;
+  if (metrics.callEv <= 6 || edge <= 0.12) return actions;
+  const maxFold = clamp(0.48 - (edge - 0.12) * 0.75 - Math.min(0.12, metrics.callEv / 120), 0.18, 0.48);
+  return capFoldFrequency(actions, maxFold);
+}
+
 function strategyOpenAction({ equity, metrics, profile, position, context, tableSize, rangeModel }) {
   const draws = profile.draws;
   const made = MADE_HAND_WEIGHT[profile.madeName] || 0;
@@ -682,7 +715,12 @@ export function recommendStrategy({
         metrics,
         position,
       });
-  const baseActions = solvedActions || distilledActions || trained?.actions || heuristicActions;
+  const approximateActions = protectPositiveCallValue(trained?.actions || heuristicActions, {
+    equity: equityResult.equity,
+    metrics,
+    profile,
+  });
+  const baseActions = solvedActions || distilledActions || approximateActions;
   const actions = applyLinePressure(baseActions, {
     equity: equityResult.equity,
     metrics,
