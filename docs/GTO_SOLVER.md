@@ -9,6 +9,24 @@ This track adds a real solver whose distance to GTO is an *exact number*:
 reported as a fraction of the pot (and mbb/pot). At a true Nash equilibrium this
 is 0.
 
+## Current distance to GTO (where the live product stands)
+
+Measured against exact best response, on the deployed engine:
+
+| decision | policy in the live product | exploitability (vs GTO 0%) |
+|----------|----------------------------|---------------------------:|
+| river, 5 canonical textures | exact CFR solved per combo | **~0.14% pot** |
+| river, all other open/facing | distilled GTO (generalizes) | **~9% pot** (was ~29% heuristic) |
+| turn / flop | heuristic + exploits | not yet measured in-product |
+| preflop | position range tables | n/a (table policy) |
+
+So on the river the product is at or near GTO; the remaining gap is the **turn
+and flop**, which still use the heuristic. The river distilled model sits at a
+**feature-limited plateau** (~9% — held-out TV ~0.12 from equilibrium; more
+training data and wider MLPs did not move it, so the limit is the 33-feature
+abstraction, not data). Closing the turn/flop gap is the next frontier and needs
+the solve→distill pipeline extended to those streets (tracked in the roadmap).
+
 ## Why exploitability is the right metric
 
 GTO = a Nash equilibrium of the betting game. A strategy is "GTO" iff no opponent
