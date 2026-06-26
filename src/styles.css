@@ -666,6 +666,220 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.practice-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.75fr) minmax(300px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.practice-question {
+  min-height: 520px;
+}
+
+.practice-spot {
+  display: grid;
+  gap: 7px;
+  min-height: 90px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(67, 184, 131, 0.18), rgba(79, 143, 207, 0.08)),
+    #111815;
+}
+
+.practice-spot span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.practice-spot strong {
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.practice-cards {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #101614;
+}
+
+.practice-cards > div {
+  display: flex;
+  gap: 8px;
+}
+
+.practice-cards > strong {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.practice-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.practice-actions button {
+  display: grid;
+  gap: 6px;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.practice-actions button:hover {
+  border-color: rgba(67, 184, 131, 0.55);
+  transform: translateY(-1px);
+}
+
+.practice-actions button:disabled {
+  cursor: default;
+  opacity: 0.68;
+  transform: none;
+}
+
+.practice-actions button.is-picked {
+  border-color: rgba(215, 168, 77, 0.78);
+  background: rgba(215, 168, 77, 0.14);
+}
+
+.practice-actions strong {
+  font-size: 15px;
+}
+
+.practice-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.practice-result {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.practice-verdict {
+  display: grid;
+  gap: 5px;
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #111815;
+}
+
+.practice-verdict.good {
+  border-color: rgba(67, 184, 131, 0.6);
+  background: rgba(67, 184, 131, 0.11);
+}
+
+.practice-verdict.mix {
+  border-color: rgba(215, 168, 77, 0.58);
+  background: rgba(215, 168, 77, 0.1);
+}
+
+.practice-verdict.leak {
+  border-color: rgba(201, 80, 80, 0.58);
+  background: rgba(201, 80, 80, 0.1);
+}
+
+.practice-verdict strong {
+  font-size: 18px;
+}
+
+.practice-verdict span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.practice-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.practice-mix {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.practice-locked {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.practice-history {
+  display: grid;
+  gap: 8px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 3px;
+}
+
+.practice-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: #111815;
+}
+
+.practice-history-item.good {
+  border-left-color: var(--green-2);
+}
+
+.practice-history-item.mix {
+  border-left-color: var(--amber);
+}
+
+.practice-history-item.leak {
+  border-left-color: var(--red);
+}
+
+.practice-history-item div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.practice-history-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.practice-history-item span,
+.practice-history-item em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
 .range-cell::after {
   content: "";
   position: absolute;
@@ -1854,6 +2068,7 @@ button:focus-visible {
 
 @media (max-width: 1180px) {
   .lab-grid,
+  .practice-grid,
   .sim-grid,
   .multi-grid {
     grid-template-columns: 1fr;
@@ -1898,8 +2113,19 @@ button:focus-visible {
   }
 
   .form-grid,
-  .metric-grid {
+  .metric-grid,
+  .practice-actions,
+  .practice-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .practice-cards {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .practice-cards > strong {
+    font-size: 28px;
   }
 
   .board-slots {

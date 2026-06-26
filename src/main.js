@@ -10,6 +10,7 @@ import {
   cardLabel,
   clamp,
   comboCountForCode,
+  handCodeFromCards,
   makeDeck,
   matrixCode,
   pct,
@@ -19,6 +20,7 @@ import {
   suitTone,
   validateCards,
 } from "./poker-core.js";
+import { preflopStrategyActions } from "./preflop-policy.js";
 import { recommendStrategy } from "./strategy-engine.js";
 import { AI_LEVELS, HoldemSimulator, STREET_LABELS } from "./simulator.js";
 
@@ -44,6 +46,37 @@ const mpState = {
   reviewHandNumber: null,
 };
 
+const PRACTICE_SPOTS = [
+  { id: "utg-rfi", label: "UTG RFI", position: "UTG", context: "unopened" },
+  { id: "hj-rfi", label: "HJ RFI", position: "HJ", context: "unopened" },
+  { id: "co-rfi", label: "CO RFI", position: "CO", context: "unopened" },
+  { id: "btn-rfi", label: "BTN RFI", position: "BTN", context: "unopened" },
+  { id: "sb-rfi", label: "SB RFI", position: "SB", context: "unopened" },
+  { id: "hj-vs-utg", label: "HJ vs UTG open", position: "HJ", context: "facing-open", aggressorPosition: "UTG" },
+  { id: "co-vs-utg", label: "CO vs UTG open", position: "CO", context: "facing-open", aggressorPosition: "UTG" },
+  { id: "btn-vs-utg", label: "BTN vs UTG open", position: "BTN", context: "facing-open", aggressorPosition: "UTG" },
+  { id: "btn-vs-co", label: "BTN vs CO open", position: "BTN", context: "facing-open", aggressorPosition: "CO" },
+  { id: "sb-vs-btn", label: "SB vs BTN open", position: "SB", context: "blind-defense", aggressorPosition: "BTN" },
+  { id: "bb-vs-utg", label: "BB vs UTG open", position: "BB", context: "blind-defense", aggressorPosition: "UTG" },
+  { id: "bb-vs-co", label: "BB vs CO open", position: "BB", context: "blind-defense", aggressorPosition: "CO" },
+  { id: "bb-vs-btn", label: "BB vs BTN open", position: "BB", context: "blind-defense", aggressorPosition: "BTN" },
+  { id: "bb-vs-sb", label: "BB vs SB open", position: "BB", context: "blind-defense", aggressorPosition: "SB" },
+  { id: "utg-vs-btn-3bet", label: "UTG vs BTN 3bet", position: "UTG", context: "facing-3bet", aggressorPosition: "BTN" },
+  { id: "co-vs-btn-3bet", label: "CO vs BTN 3bet", position: "CO", context: "facing-3bet", aggressorPosition: "BTN" },
+  { id: "btn-vs-sb-3bet", label: "BTN vs SB 3bet", position: "BTN", context: "facing-3bet", aggressorPosition: "SB" },
+  { id: "sb-vs-bb-3bet", label: "SB vs BB 3bet", position: "SB", context: "facing-3bet", aggressorPosition: "BB" },
+];
+
+const practiceState = {
+  current: null,
+  answered: false,
+  selectedKey: null,
+  total: 0,
+  correct: 0,
+  streak: 0,
+  history: [],
+};
+
 app.innerHTML = `
   <div class="app-shell">
     <header class="topbar">
@@ -56,6 +89,7 @@ app.innerHTML = `
       </div>
       <nav class="tabs" aria-label="Views">
         <button class="tab-button is-active" data-tab="lab"><i data-lucide="calculator"></i><span>策略台</span></button>
+        <button class="tab-button" data-tab="practice"><i data-lucide="dumbbell"></i><span>翻前练习</span></button>
         <button class="tab-button" data-tab="multi"><i data-lucide="users"></i><span>对战桌</span></button>
       </nav>
     </header>
@@ -148,6 +182,38 @@ app.innerHTML = `
             </div>
             <div class="range-summary" id="range-summary"></div>
             <div class="range-matrix" id="range-matrix"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="practice">
+        <div class="practice-grid">
+          <section class="panel practice-question">
+            <div class="panel-head">
+              <h2>翻前题面</h2>
+              <button class="icon-button" id="practice-next" title="下一题"><i data-lucide="shuffle"></i></button>
+            </div>
+            <div class="practice-spot" id="practice-spot"></div>
+            <div class="practice-cards" id="practice-cards"></div>
+            <div class="practice-actions" id="practice-actions"></div>
+            <div class="practice-result" id="practice-result"></div>
+          </section>
+
+          <section class="panel practice-info">
+            <div class="panel-head">
+              <h2>统计</h2>
+              <i data-lucide="chart-no-axes-column"></i>
+            </div>
+            <div class="practice-stats" id="practice-stats"></div>
+            <div class="practice-mix" id="practice-mix"></div>
+          </section>
+
+          <section class="panel practice-history-panel">
+            <div class="panel-head">
+              <h2>最近题目</h2>
+              <button class="icon-button" id="practice-reset" title="重置统计"><i data-lucide="rotate-ccw"></i></button>
+            </div>
+            <div class="practice-history" id="practice-history"></div>
           </section>
         </div>
       </section>
@@ -646,6 +712,236 @@ function resetCards() {
   labState.target = "hero";
   setStatus("");
   renderLab();
+}
+
+function practiceSpotLabel(spot) {
+  if (!spot) return "";
+  if (spot.context === "unopened") return `${spot.position} 首入池`;
+  if (spot.context === "facing-3bet") return `${spot.position} 面对 ${spot.aggressorPosition} 3bet`;
+  return `${spot.position} 面对 ${spot.aggressorPosition} open`;
+}
+
+function practiceContextMeta(spot) {
+  if (!spot) return "";
+  if (spot.context === "unopened") return "6-max 100bb · RFI";
+  if (spot.context === "facing-3bet") return "6-max 100bb · open 后面对 3bet";
+  return "6-max 100bb · opener-specific 防守";
+}
+
+function generatePracticeQuestion() {
+  const deck = shuffle(makeDeck());
+  const cards = [deck.pop(), deck.pop()];
+  const spot = PRACTICE_SPOTS[Math.floor(Math.random() * PRACTICE_SPOTS.length)];
+  const handCode = handCodeFromCards(cards);
+  const actions = preflopStrategyActions({
+    handCode,
+    position: spot.position,
+    context: spot.context,
+    aggressorPosition: spot.aggressorPosition,
+    tableSize: 6,
+    stackBb: 100,
+  });
+
+  practiceState.current = {
+    ...spot,
+    cards,
+    handCode,
+    actions,
+  };
+  practiceState.answered = false;
+  practiceState.selectedKey = null;
+  renderPractice();
+}
+
+function practiceActionFrequency(actions, key) {
+  if (key === "raise") {
+    return actions
+      .filter((action) => ["raise", "raise-small", "raise-big"].includes(action.key))
+      .reduce((sum, action) => sum + action.frequency, 0);
+  }
+  return actions.find((action) => action.key === key)?.frequency || 0;
+}
+
+function practiceVerdict(actions, key) {
+  const best = actions[0];
+  const chosenFrequency = practiceActionFrequency(actions, key);
+  const bestFrequency = best?.frequency || 0;
+  const correct = chosenFrequency >= 0.35 || bestFrequency - chosenFrequency <= 0.12;
+  if (correct && chosenFrequency < 0.55) return { correct, label: "可混合", tone: "mix", chosenFrequency, best };
+  if (correct) return { correct, label: "合理", tone: "good", chosenFrequency, best };
+  return { correct, label: "偏离", tone: "leak", chosenFrequency, best };
+}
+
+function answerPractice(key) {
+  if (!practiceState.current || practiceState.answered) return;
+  const verdict = practiceVerdict(practiceState.current.actions, key);
+  practiceState.answered = true;
+  practiceState.selectedKey = key;
+  practiceState.total += 1;
+  if (verdict.correct) {
+    practiceState.correct += 1;
+    practiceState.streak += 1;
+  } else {
+    practiceState.streak = 0;
+  }
+  practiceState.history.unshift({
+    spot: practiceSpotLabel(practiceState.current),
+    cards: practiceState.current.cards,
+    handCode: practiceState.current.handCode,
+    picked: key,
+    verdict,
+  });
+  practiceState.history = practiceState.history.slice(0, 12);
+  renderPractice();
+}
+
+function resetPracticeStats() {
+  practiceState.total = 0;
+  practiceState.correct = 0;
+  practiceState.streak = 0;
+  practiceState.history = [];
+  renderPractice();
+}
+
+function renderPracticeActions(question) {
+  const buttons = [
+    { key: "fold", label: "弃牌" },
+    { key: "call", label: "跟注" },
+    { key: "raise", label: question?.context === "unopened" ? "Open" : question?.context === "facing-3bet" ? "4bet" : "3bet" },
+    { key: "jam", label: "Jam" },
+  ];
+  $("#practice-actions").innerHTML = buttons
+    .map((item) => {
+      const freq = question ? practiceActionFrequency(question.actions, item.key) : 0;
+      const isPicked = practiceState.selectedKey === item.key;
+      return `
+        <button
+          class="${isPicked ? "is-picked" : ""}"
+          data-practice-action="${item.key}"
+          ${practiceState.answered ? "disabled" : ""}
+          title="${practiceState.answered ? `GTO 频率 ${pct(freq, 0)}` : item.label}"
+        >
+          <strong>${item.label}</strong>
+          <span>${practiceState.answered ? pct(freq, 0) : "?"}</span>
+        </button>
+      `;
+    })
+    .join("");
+  $$("#practice-actions button").forEach((button) => {
+    button.addEventListener("click", () => answerPractice(button.dataset.practiceAction));
+  });
+}
+
+function renderPracticeResult(question) {
+  if (!question || !practiceState.answered) {
+    $("#practice-result").innerHTML = `<div class="waiting">选择一个动作后显示答案</div>`;
+    return;
+  }
+  const verdict = practiceVerdict(question.actions, practiceState.selectedKey);
+  $("#practice-result").innerHTML = `
+    <div class="practice-verdict ${verdict.tone}">
+      <strong>${verdict.label}</strong>
+      <span>你的动作频率 ${pct(verdict.chosenFrequency, 0)} · 最高频 ${verdict.best.label} ${pct(verdict.best.frequency, 0)}</span>
+    </div>
+    <button class="primary-action" id="practice-next-inline"><i data-lucide="arrow-right"></i><span>下一题</span></button>
+  `;
+  $("#practice-next-inline").addEventListener("click", generatePracticeQuestion);
+}
+
+function renderPracticeMix(question) {
+  if (!question) {
+    $("#practice-mix").innerHTML = "";
+    return;
+  }
+  if (!practiceState.answered) {
+    $("#practice-mix").innerHTML = `
+      <div class="subhead">
+        <strong>GTO 混合</strong>
+        <span>${question.handCode}</span>
+      </div>
+      <div class="practice-locked">答题后显示完整频率</div>
+    `;
+    return;
+  }
+  $("#practice-mix").innerHTML = `
+    <div class="subhead">
+      <strong>GTO 混合</strong>
+      <span>${question.handCode}</span>
+    </div>
+    ${question.actions
+      .map(
+        (action) => `
+          <div class="mix-row ${action.tone}">
+            <div class="mix-label">
+              <strong>${action.label}</strong>
+              <span>${pct(action.frequency, 1)}</span>
+            </div>
+            <div class="mix-bar"><span style="width:${action.frequency * 100}%"></span></div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+}
+
+function renderPracticeStats() {
+  const accuracy = practiceState.total ? practiceState.correct / practiceState.total : 0;
+  $("#practice-stats").innerHTML = [
+    ["题数", practiceState.total],
+    ["正确", practiceState.correct],
+    ["正确率", practiceState.total ? pct(accuracy, 1) : "-"],
+    ["连中", practiceState.streak],
+  ]
+    .map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`)
+    .join("");
+}
+
+function renderPracticeHistory() {
+  if (!practiceState.history.length) {
+    $("#practice-history").innerHTML = `<div class="review-empty">还没有答题记录</div>`;
+    return;
+  }
+  $("#practice-history").innerHTML = practiceState.history
+    .map(
+      (item) => `
+        <article class="practice-history-item ${item.verdict.tone}">
+          <div>
+            <strong>${escapeHtml(item.spot)}</strong>
+            <span>${item.cards.map(cardLabel).join(" ")} · ${item.handCode}</span>
+          </div>
+          <em>${item.verdict.label} · ${item.picked}</em>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderPractice() {
+  const question = practiceState.current;
+  if (!question) {
+    $("#practice-spot").innerHTML = `<span>点击下一题开始</span>`;
+    $("#practice-cards").innerHTML = "";
+    $("#practice-actions").innerHTML = "";
+    $("#practice-result").innerHTML = `<div class="waiting">准备随机题目</div>`;
+    renderPracticeStats();
+    renderPracticeMix(null);
+    renderPracticeHistory();
+    return;
+  }
+  $("#practice-spot").innerHTML = `
+    <span>${practiceContextMeta(question)}</span>
+    <strong>${practiceSpotLabel(question)}</strong>
+  `;
+  $("#practice-cards").innerHTML = `
+    <div>${question.cards.map((card) => cardPip(card)).join("")}</div>
+    <strong>${question.handCode}</strong>
+  `;
+  renderPracticeActions(question);
+  renderPracticeResult(question);
+  renderPracticeStats();
+  renderPracticeMix(question);
+  renderPracticeHistory();
+  hydrateIcons();
 }
 
 function cardPip(card, hidden = false) {
@@ -1463,6 +1759,8 @@ function wireEvents() {
   $("#run-calc").addEventListener("click", runCalculation);
   $("#random-scenario").addEventListener("click", randomScenario);
   $("#reset-cards").addEventListener("click", resetCards);
+  $("#practice-next").addEventListener("click", generatePracticeQuestion);
+  $("#practice-reset").addEventListener("click", resetPracticeStats);
   $("#new-hand").addEventListener("click", () => {
     simulator.newHand();
     renderSimulator();
@@ -1498,6 +1796,7 @@ setupControls();
 resetRangeFromControls();
 wireEvents();
 renderLab();
+generatePracticeQuestion();
 renderSimulator();
 renderMultiplayer();
 hydrateIcons();

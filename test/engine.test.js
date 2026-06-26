@@ -14,6 +14,7 @@ import {
 import { recommendStrategy } from "../src/strategy-engine.js";
 import { HoldemSimulator } from "../src/simulator.js";
 import { trainedPolicyArtifact } from "../src/trained-policy-artifact.js";
+import { preflopStrategyActions } from "../src/preflop-policy.js";
 
 assert.equal(trainedPolicyArtifact.passed, true);
 assert.equal(trainedPolicyArtifact.featureNames.length, 33);
@@ -99,6 +100,75 @@ assert.ok(!bbCheckOption.actions.some((action) => action.key === "fold"));
 assert.notEqual(bbCheckOption.actions[0].key, "fold");
 assert.match(bbCheckOption.sizing.label, /隔离|加注/);
 assert.ok(bbCheckOption.sizing.options.some((option) => option.label.includes("隔离")));
+
+const huButtonOpen = preflopStrategyActions({
+  handCode: "K2s",
+  position: "SB",
+  context: "unopened",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.equal(huButtonOpen[0].key, "raise");
+
+const huButtonFold = preflopStrategyActions({
+  handCode: "72o",
+  position: "SB",
+  context: "unopened",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.equal(huButtonFold[0].key, "fold");
+
+const huBbDefend = preflopStrategyActions({
+  handCode: "72s",
+  position: "BB",
+  context: "blind-defense",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.equal(huBbDefend[0].key, "call");
+
+const huButtonVsThreeBet = preflopStrategyActions({
+  handCode: "A2s",
+  position: "SB",
+  context: "facing-3bet",
+  tableSize: 2,
+  stackBb: 100,
+});
+assert.deepEqual(
+  huButtonVsThreeBet.map((action) => action.key),
+  ["fold", "raise"],
+);
+
+const sixMaxUtgFold = preflopStrategyActions({
+  handCode: "72o",
+  position: "UTG",
+  context: "unopened",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxUtgFold[0].key, "fold");
+
+const sixMaxBbVsBtnAces = preflopStrategyActions({
+  handCode: "AA",
+  position: "BB",
+  context: "blind-defense",
+  aggressorPosition: "BTN",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBbVsBtnAces[0].key, "raise");
+assert.ok(!sixMaxBbVsBtnAces.some((action) => action.key === "jam"));
+
+const sixMaxBtnVsUtg = preflopStrategyActions({
+  handCode: "AQo",
+  position: "BTN",
+  context: "facing-open",
+  aggressorPosition: "UTG",
+  tableSize: 6,
+  stackBb: 100,
+});
+assert.equal(sixMaxBtnVsUtg[0].key, "raise");
 
 const openOption = recommendStrategy({
   hero: ["4c", "6d"],

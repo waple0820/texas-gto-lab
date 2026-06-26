@@ -1,6 +1,8 @@
 import { allHandCodes, clamp, comboCountForCode, scoreHandCode } from "./poker-core.js";
+import { HU_PREFLOP_TABLE_VERSION, lookupHuPreflopActions } from "./preflop-hu-table.js";
+import { SIXMAX_PREFLOP_TABLE_VERSION, lookupSixMaxPreflopActions } from "./preflop-sixmax-table.js";
 
-export const PREFLOP_POLICY_VERSION = "preflop-range-table-v1";
+export const PREFLOP_POLICY_VERSION = `${HU_PREFLOP_TABLE_VERSION}+${SIXMAX_PREFLOP_TABLE_VERSION}`;
 
 const OPEN_WIDTH = {
   UTG: 0.17,
@@ -165,8 +167,26 @@ function checkOptionActions({ handCode, position, stackBb }) {
   ]);
 }
 
-export function preflopStrategyActions({ handCode, position = "CO", context = "unopened", stackBb = 100 } = {}) {
+export function preflopStrategyActions({
+  handCode,
+  position = "CO",
+  context = "unopened",
+  aggressorPosition,
+  tableSize = 6,
+  stackBb = 100,
+} = {}) {
   if (!handCode) return null;
+  const huActions = lookupHuPreflopActions({ handCode, position, context, tableSize, stackBb });
+  if (huActions) return huActions;
+  const sixMaxActions = lookupSixMaxPreflopActions({
+    handCode,
+    position,
+    context,
+    aggressorPosition,
+    tableSize,
+    stackBb,
+  });
+  if (sixMaxActions) return sixMaxActions;
   if (context === "unopened") return openActions({ handCode, position, stackBb });
   if (context === "check-option" || context === "limped-pot" || context === "blind-check") {
     return checkOptionActions({ handCode, position, stackBb });
