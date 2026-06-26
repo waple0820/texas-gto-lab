@@ -424,8 +424,29 @@ button:focus-visible {
   background: var(--red);
 }
 
+.mix-row.accent .mix-bar span {
+  background: #5fa2de;
+}
+
 .mix-row.strong .mix-bar span {
   background: var(--amber);
+}
+
+/* Emphasize the most-frequent (primary GTO) action. */
+.action-mix .mix-row:first-child {
+  border-color: rgba(215, 168, 77, 0.4);
+  background: linear-gradient(180deg, rgba(215, 168, 77, 0.07), transparent), var(--surface-2);
+}
+.action-mix .mix-row:first-child .mix-label strong::before {
+  content: "▸ ";
+  color: var(--amber);
+}
+.mix-label strong {
+  font-size: 14px;
+}
+.mix-label span {
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
 }
 
 .metric-grid {
