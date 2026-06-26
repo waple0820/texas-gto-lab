@@ -78,16 +78,17 @@ class TorchTurnSolver:
         return self.sign_by_card[node.river_card] if node.sign_kind == "river" else self.avg_sign
 
     def _terminal(self, node, reach_opp, player):
+        base = getattr(node, "base", 0.0)  # turn-street chips in the river pot
         if node.kind == "showdown":
             sign = self._sign_for(node)
-            amount = self.pot / 2.0 + node.invested
+            amount = self.pot / 2.0 + base + node.invested
             if player == OOP:
                 return (sign @ reach_opp) * amount
             return -(reach_opp @ sign) * amount
         if node.folder == IP:
-            g = self.pot / 2.0 + node.fold_invested_ip
+            g = self.pot / 2.0 + base + node.fold_invested_ip
         else:
-            g = -(self.pot / 2.0 + node.fold_invested_oop)
+            g = -(self.pot / 2.0 + base + node.fold_invested_oop)
         if player == OOP:
             return (self.valid @ reach_opp) * g
         return (reach_opp @ self.valid) * (-g)
