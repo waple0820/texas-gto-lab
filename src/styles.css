@@ -708,6 +708,11 @@ button:focus-visible {
   display: grid;
   grid-template-columns: repeat(13, minmax(48px, 1fr));
   gap: 4px;
+  /* on narrow screens the 13-col grid (>=624px) must scroll WITHIN its panel
+     rather than push the whole page wide (which clipped the deck/headers). */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
 
 .range-cell {
@@ -2651,10 +2656,19 @@ button:focus-visible {
   .sim-grid,
   .multi-grid {
     grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  /* grid children must be allowed to shrink, else a wide child (the 13-col range
+     matrix) forces the column — and the page — wider than the viewport. */
+  .lab-grid > *,
+  .multi-grid > * {
+    min-width: 0;
   }
 
   .range-panel {
     grid-column: auto;
+    overflow: hidden;
   }
 
   .table-panel {
