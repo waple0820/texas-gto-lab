@@ -184,6 +184,7 @@ app.innerHTML = `
               <span id="sample-count">Ready</span>
             </div>
             <div class="policy-source-row" id="policy-source-row" hidden></div>
+            <div class="advice-hero" id="lab-advice-hero" hidden></div>
             <div id="action-mix" class="action-mix empty-state">选择手牌并计算</div>
             <div class="metric-grid" id="metric-grid"></div>
             <div class="sizing-tree" id="sizing-tree"></div>
@@ -652,6 +653,21 @@ function renderPolicySource(policySource) {
 function renderRecommendation(result) {
   $("#sample-count").textContent = `${result.equity.iterations} samples`;
   renderPolicySource(result.policySource);
+  // hero callout — the GTO-preferred action, consistent with the battle decision station
+  const sorted = [...result.actions].sort((a, b) => b.frequency - a.frequency);
+  const top = sorted[0];
+  const mixed = sorted.filter((a) => a.frequency >= 0.12).length > 1;
+  const hero = $("#lab-advice-hero");
+  if (hero && top) {
+    hero.hidden = false;
+    hero.innerHTML = `
+      <div class="advice-hero-main ${top.tone || ""}">
+        <span class="advice-hero-label">建议</span>
+        <strong>${escapeHtml(top.label)}</strong>
+        <span class="advice-hero-freq">${pct(top.frequency, 0)}</span>
+      </div>
+      <span class="advice-hero-tag">${mixed ? "混合策略" : "纯策略"}</span>`;
+  }
   $("#action-mix").classList.remove("empty-state");
   $("#action-mix").innerHTML = result.actions
     .map(
