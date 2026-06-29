@@ -32,12 +32,16 @@
     "gen:facing-parallel": "python3 scripts/solver/parallel_facing.py",
     "train:distill": "python3 scripts/solver/train_distill.py",
     "eval:generalization": "python3 scripts/solver/eval_generalization.py",
-    "eval:unified": "python3 scripts/solver/eval_unified.py"
+    "eval:unified": "python3 scripts/solver/eval_unified.py",
+    "shot": "node scripts/screenshot.mjs"
   },
   "dependencies": {
     "lucide": "^1.21.0",
     "pokersolver": "^2.1.4",
     "vite": "^8.0.16",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1"
   }
 }
