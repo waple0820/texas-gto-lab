@@ -1234,6 +1234,79 @@ button:focus-visible {
 /* Live GTO decision station shown above the action buttons on the hero's turn.
    Reuses .action-mix / .metric-grid / .policy-source-row from the lab readout so
    it matches the analysis surface, framed in the GTO green accent. */
+/* Tabbed sidebar feed: 行动线 / 复盘 / 聊天 — one panel at a time. */
+.mp-feed {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 56px),
+    var(--surface);
+  padding: 11px;
+  box-shadow: var(--shadow-2);
+}
+
+.mp-feed-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(8, 11, 10, 0.55);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.mp-feed-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.mp-feed-tab svg { width: 15px; height: 15px; }
+
+.mp-feed-tab em {
+  font-style: normal;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.mp-feed-tab:hover { color: var(--text); }
+
+.mp-feed-tab.is-active {
+  background: linear-gradient(180deg, rgba(69, 192, 139, 0.2), rgba(34, 59, 49, 0.45));
+  border-color: rgba(69, 192, 139, 0.5);
+  color: var(--text);
+}
+
+.mp-feed-tab.is-active em {
+  background: rgba(69, 192, 139, 0.22);
+  color: #bff0d6;
+}
+
+.mp-feed-panel {
+  display: none;
+}
+
+.mp-feed-panel.is-active {
+  display: block;
+}
+
 /* The GTO decision station — the solver hero. A prominent accent-framed card with
    a big recommended-action callout, the full strategy mix, and the metric grid. */
 .mp-advice {
@@ -1764,7 +1837,7 @@ button:focus-visible {
 .chat-list {
   display: grid;
   gap: 7px;
-  max-height: 210px;
+  max-height: 340px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -2030,7 +2103,7 @@ button:focus-visible {
 .action-line {
   display: grid;
   gap: 8px;
-  max-height: 220px;
+  max-height: 340px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -2122,7 +2195,7 @@ button:focus-visible {
 .review-list {
   display: grid;
   gap: 8px;
-  max-height: 420px;
+  max-height: 340px;
   overflow: auto;
   padding-right: 4px;
 }
