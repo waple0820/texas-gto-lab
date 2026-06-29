@@ -1422,22 +1422,64 @@ function renderMpRange(state) {
   const heroCode = me.hole?.length === 2 ? handCodeFromCards(me.hole) : null;
   const coverage = me.position ? rangeCoverage(weights) : null;
   const ctxLabel = CONTEXT_LABELS[me.context] || me.context;
+  // Preflop: color each hand by its GTO ACTION (raise/call/fold split) — the
+  // signature solver view — from the exact preflop policy tables. Postflop: fall
+  // back to range presence (no per-hand postflop strategy available client-side).
+  const preflop = !state.board || state.board.length === 0;
   meta.innerHTML = `<strong>${me.position} · ${escapeHtml(ctxLabel)}</strong>` +
     (coverage ? ` <span>${round(coverage.percent * 100, 1)}% · ${coverage.combos} combos</span>` : "") +
-    (heroCode ? ` <em>你: ${heroCode}</em>` : "");
+    (heroCode ? ` <em>你: ${heroCode}</em>` : "") +
+    (preflop
+      ? ` <span class="mp-range-legend"><i class="lg-raise"></i>加注 <i class="lg-call"></i>跟注 <i class="lg-fold"></i>弃牌</span>`
+      : "");
   const cells = [];
   for (let row = 0; row < RANKS.length; row += 1) {
     for (let col = 0; col < RANKS.length; col += 1) {
       const code = matrixCode(row, col);
-      const weight = Number(weights[code] || 0);
       const cellType = row === col ? "cell-pair" : row < col ? "cell-suited" : "cell-offsuit";
       const isHero = code === heroCode;
-      cells.push(
-        `<div class="mp-range-cell ${cellType} ${weight <= 0 ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="--weight:${weight}" title="${code} ${Math.round(weight * 100)}%"><span>${code}</span></div>`,
-      );
+      if (preflop) {
+        const cat = preflopActionMix(code, me);
+        const rp = Math.round(cat.raise * 100);
+        const cp = Math.round((cat.raise + cat.call) * 100);
+        const grad = `linear-gradient(90deg, var(--red) 0 ${rp}%, var(--green-2) ${rp}% ${cp}%, rgba(120,130,124,0.18) ${cp}% 100%)`;
+        const empty = cat.raise + cat.call < 0.02;
+        cells.push(
+          `<div class="mp-range-cell strategy ${cellType} ${empty ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="background:${grad}" title="${code} — 加注${rp}% 跟注${cp - rp}% 弃牌${100 - cp}%"><span>${code}</span></div>`,
+        );
+      } else {
+        const weight = Number(weights[code] || 0);
+        cells.push(
+          `<div class="mp-range-cell ${cellType} ${weight <= 0 ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="--weight:${weight}" title="${code} ${Math.round(weight * 100)}%"><span>${code}</span></div>`,
+        );
+      }
     }
   }
   grid.innerHTML = cells.join("");
+}
+
+// Per-hand preflop GTO action mix (raise / call / fold fractions) from the exact
+// policy tables, for the strategy-colored range matrix.
+function preflopActionMix(handCode, me) {
+  const actions = preflopStrategyActions({
+    handCode,
+    position: me.position,
+    context: me.context,
+    tableSize: me.tableSize || 2,
+    stackBb: me.stackBb || 100,
+  });
+  const out = { raise: 0, call: 0, fold: 0 };
+  if (!actions) { out.fold = 1; return out; }
+  for (const a of actions) {
+    const k = String(a.key || "").toLowerCase();
+    const f = a.frequency || 0;
+    if (k.includes("fold")) out.fold += f;
+    else if (k.includes("call") || k.includes("limp") || k.includes("check")) out.call += f;
+    else out.raise += f;
+  }
+  const total = out.raise + out.call + out.fold || 1;
+  out.raise /= total; out.call /= total; out.fold /= total;
+  return out;
 }
 
 // Keyboard shortcuts for the action buttons (F fold / C check-call / A all-in /
