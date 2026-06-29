@@ -86,23 +86,45 @@ def find_facing_node(solver):
     return None
 
 
+# Solve once with all these sizes; record the facing node at each so the model
+# learns size-dependent defense (MDF) instead of a single 0.66-pot bet — the
+# pot_odds feature spans the realistic range across the recorded rows.
+FACING_SIZES = [0.33, 0.66, 1.0, 1.5]
+
+
 def gen_board(seed):
     rng = np.random.default_rng(seed)
     board = list(random_board(rng))
-    solver, _ = solve_multiraise(board, POT, STACK, [BET_FRAC], 1500)
-    node = find_facing_node(solver)
-    if node is None:
-        return None
-    facing_strat = solver.average_strategy()[node.index]  # [n, 5]
     combos = all_combos(board)
-    eq = exact_equities(solver.ro.strength.astype(np.int64), solver.valid)
-    hist = equity_histogram(eq)
-    wet, pa, mo, co = board_texture(board)
     pos = float(rng.choice(POSITION_SIGNALS))
-    bet = POT * BET_FRAC
-    pot_odds = bet / (POT + 2 * bet)
-    X = facing_features(combos, board, eq, hist, wet, pa, mo, co, pos, pot_odds)
-    return X, facing_strat.astype(np.float32)
+    Xs, Ys = [], []
+    # Solve each bet size as its OWN single-size tree. Building one tree with all
+    # sizes explodes the multiraise tree (each size carries deep raise subtrees) —
+    # ~20 min/board. Four separate single-size solves are the fast original solve
+    # each (~10s), so ~40s/board, and give the same per-size facing strategies.
+    for frac in FACING_SIZES:
+        solver, _ = solve_multiraise(board, POT, STACK, [frac], 1200)
+        # IP-faces-the-bet node = root.children[1] (root: [check, faces_bet]).
+        # Big bets fit fewer raise sizes, so the action set varies — map each
+        # action to its canonical FACING_LABELS slot by NAME (not position).
+        node = solver.root.children[1]
+        if list(node.actions)[:2] != ["fold", "call"]:
+            continue
+        raw = solver.average_strategy()[node.index]        # [n, k]
+        dist = np.zeros((len(combos), 5), dtype=np.float32)
+        for j, act in enumerate(node.actions):
+            if act in FACING_LABELS:
+                dist[:, FACING_LABELS.index(act)] = raw[:, j]
+        eq = exact_equities(solver.ro.strength.astype(np.int64), solver.valid)
+        hist = equity_histogram(eq)
+        wet, pa, mo, co = board_texture(board)
+        bet = POT * frac
+        pot_odds = bet / (POT + 2 * bet)
+        Xs.append(facing_features(combos, board, eq, hist, wet, pa, mo, co, pos, pot_odds))
+        Ys.append(dist)
+    if not Xs:
+        return None
+    return np.concatenate(Xs, axis=0), np.concatenate(Ys, axis=0)
 
 
 def main():
