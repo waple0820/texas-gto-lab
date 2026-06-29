@@ -347,6 +347,7 @@ function pruneIdleTable() {
     table.actions = [];
     table.reviews = [];
     table.winners = [];
+    table.showdownHands = [];
     table.chat = [];
     table.lastEvent = "等待玩家入座";
   }
@@ -632,6 +633,16 @@ function showdown() {
     name: row.player.name,
     amount: round(share, 1),
     hand: row.solved.descr,
+  }));
+  // Per-contender showdown detail so the UI can show every revealed hand's rank
+  // and who won how much — not just names + cards.
+  const winnerIds = new Set(winnerRows.map((row) => row.player.id));
+  table.showdownHands = solved.map((item) => ({
+    id: item.player.id,
+    hand: item.solved.descr,
+    rank: item.solved.name,
+    won: winnerIds.has(item.player.id),
+    amount: winnerIds.has(item.player.id) ? round(share, 1) : 0,
   }));
   table.lastEvent = `${table.winners.map((winner) => winner.name).join(" / ")} 摊牌获胜`;
   endHand();
@@ -972,6 +983,7 @@ function publicState(forPlayer = null) {
     tableReview: table.phase === "showdown" ? table.reviews : [],
     chat: table.chat,
     winners: table.winners,
+    showdownHands: table.showdownHands || [],
     players: table.players.map((player) => ({
       id: player.id,
       name: player.name,

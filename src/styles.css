@@ -1414,34 +1414,66 @@ button:focus-visible {
 
 .show-card-row {
   display: grid;
-  grid-template-columns: minmax(0, 92px) 1fr;
-  align-items: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #111815;
 }
 
-.show-card-row strong {
+/* Winner row: green accent + left border so the result reads at a glance. */
+.show-card-row.won {
+  border-color: rgba(67, 184, 131, 0.5);
+  background: linear-gradient(180deg, rgba(67, 184, 131, 0.1), rgba(67, 184, 131, 0.02));
+  box-shadow: inset 3px 0 0 var(--green-2);
+}
+
+.show-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.show-card-top strong {
   overflow: hidden;
   color: #dce9e1;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.show-card-row span {
+.show-win {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(67, 184, 131, 0.18);
+  border: 1px solid rgba(67, 184, 131, 0.5);
+  color: var(--green-2);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.show-card-cards {
   display: flex;
   gap: 5px;
 }
 
 .show-card-row .mini-card {
-  width: 32px;
-  height: 44px;
+  width: 34px;
+  height: 46px;
   border-radius: 5px;
   font-size: 13px;
+}
+
+.show-card-hand {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.show-card-row.won .show-card-hand {
+  color: var(--green-2);
 }
 
 .mp-center .mini-card {
@@ -2357,10 +2389,6 @@ button:focus-visible {
     width: 36px;
     height: 50px;
     font-size: 14px;
-  }
-
-  .show-card-row {
-    grid-template-columns: minmax(0, 82px) 1fr;
   }
 
   .multi-controls {

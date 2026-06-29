@@ -1488,15 +1488,25 @@ function renderMpShowdownCards(state) {
     return;
   }
   shell.hidden = false;
-  $("#mp-showdown-cards").innerHTML = shownPlayers
-    .map(
-      (player) => `
-        <div class="show-card-row">
-          <strong>${escapeHtml(player.name)}</strong>
-          <span>${player.hole.map((card) => cardPip(card)).join("")}</span>
+  const hands = state.showdownHands || [];
+  const byId = Object.fromEntries(hands.map((h) => [h.id, h]));
+  // winners first, then by hand strength order they were revealed
+  const ordered = [...shownPlayers].sort((a, b) => (byId[b.id]?.won ? 1 : 0) - (byId[a.id]?.won ? 1 : 0));
+  $("#mp-showdown-cards").innerHTML = ordered
+    .map((player) => {
+      const info = byId[player.id];
+      const won = info?.won;
+      return `
+        <div class="show-card-row${won ? " won" : ""}">
+          <div class="show-card-top">
+            <strong>${escapeHtml(player.name)}</strong>
+            ${won ? `<span class="show-win">+${info.amount}bb</span>` : ""}
+          </div>
+          <div class="show-card-cards">${player.hole.map((card) => cardPip(card)).join("")}</div>
+          ${info?.hand ? `<div class="show-card-hand">${escapeHtml(info.hand)}</div>` : ""}
         </div>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
