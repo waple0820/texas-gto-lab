@@ -331,31 +331,26 @@ app.innerHTML = `
               </div>
               <div class="mp-showdown-cards" id="mp-showdown-cards"></div>
             </div>
-            <div class="chat-shell">
-              <div class="subhead">
-                <strong>聊天室</strong>
-                <span id="mp-chat-count">0 messages</span>
+            <div class="mp-feed">
+              <div class="mp-feed-tabs" role="tablist">
+                <button class="mp-feed-tab is-active" data-feed="line"><i data-lucide="activity"></i><span>行动线</span><em id="mp-action-count">0</em></button>
+                <button class="mp-feed-tab" data-feed="review"><i data-lucide="git-compare"></i><span>复盘</span><em id="mp-review-count">0</em></button>
+                <button class="mp-feed-tab" data-feed="chat"><i data-lucide="message-circle"></i><span>聊天</span><em id="mp-chat-count">0</em></button>
               </div>
-              <div class="chat-list" id="mp-chat-list"></div>
-              <div class="chat-form">
-                <input id="mp-chat-input" maxlength="180" autocomplete="off" placeholder="说点什么" />
-                <button id="mp-chat-send"><i data-lucide="send"></i><span>发送</span></button>
+              <div class="mp-feed-panel is-active" data-feed-panel="line">
+                <div class="action-line" id="mp-action-line"></div>
               </div>
-            </div>
-            <div class="action-line-shell">
-              <div class="subhead">
-                <strong>行动线</strong>
-                <span id="mp-action-count">0 actions</span>
+              <div class="mp-feed-panel" data-feed-panel="review">
+                <div class="review-tabs" id="mp-review-tabs" hidden></div>
+                <div class="review-list" id="mp-review-list"></div>
               </div>
-              <div class="action-line" id="mp-action-line"></div>
-            </div>
-            <div class="review-shell">
-              <div class="subhead">
-                <strong id="mp-review-title">复盘</strong>
-                <span id="mp-review-count">0 decisions</span>
+              <div class="mp-feed-panel" data-feed-panel="chat">
+                <div class="chat-list" id="mp-chat-list"></div>
+                <div class="chat-form">
+                  <input id="mp-chat-input" maxlength="180" autocomplete="off" placeholder="说点什么" />
+                  <button id="mp-chat-send"><i data-lucide="send"></i><span>发送</span></button>
+                </div>
               </div>
-              <div class="review-tabs" id="mp-review-tabs" hidden></div>
-              <div class="review-list" id="mp-review-list"></div>
             </div>
           </aside>
         </div>
@@ -1358,6 +1353,7 @@ function renderMultiplayer() {
   $("#mp-ready").textContent = state?.me?.ready ? "已举手" : "举手准备";
   $("#mp-add-ai").disabled = !state?.me || !state.canAddAi;
 
+  bindMpFeedTabs();
   renderMpSeats(state);
   renderMpCenter(state);
   renderMpAdvice(state);
@@ -1366,6 +1362,20 @@ function renderMultiplayer() {
   renderMpReview(state);
   renderMpChat(state);
   hydrateIcons();
+}
+
+// Tabbed sidebar feed (行动线 / 复盘 / 聊天) — one panel at a time, no scroll fatigue.
+function bindMpFeedTabs() {
+  const tabs = $$(".mp-feed-tab");
+  if (!tabs.length || tabs[0].dataset.bound) return;
+  tabs.forEach((tab) => {
+    tab.dataset.bound = "1";
+    tab.addEventListener("click", () => {
+      const feed = tab.dataset.feed;
+      $$(".mp-feed-tab").forEach((t) => t.classList.toggle("is-active", t.dataset.feed === feed));
+      $$(".mp-feed-panel").forEach((p) => p.classList.toggle("is-active", p.dataset.feedPanel === feed));
+    });
+  });
 }
 
 function renderMpSeats(state) {
@@ -1577,7 +1587,7 @@ function renderMpActions(state) {
 function renderMpActionLine(state) {
   const actions = state?.actions || [];
   const nonBlindCount = actions.filter((action) => action.type !== "blind").length;
-  $("#mp-action-count").textContent = `${nonBlindCount} actions`;
+  $("#mp-action-count").textContent = `${nonBlindCount}`;
   $("#mp-table-action-count").textContent = `${actions.length}`;
   renderMpFloatingActionLine(actions);
   if (!actions.length) {
@@ -1644,7 +1654,6 @@ function renderMpReview(state) {
     mpState.reviewHandNumber = null;
     tabs.hidden = true;
     tabs.innerHTML = "";
-    $("#mp-review-title").textContent = "我的即时复盘";
   } else {
     const actors = reviewActorsFor(state, tableReviews);
     if (mpState.reviewHandNumber !== state.handNumber) {
@@ -1674,11 +1683,9 @@ function renderMpReview(state) {
     });
 
     reviews = tableReviews.filter((item) => item.actorId === mpState.reviewActorId);
-    const actor = actors.find((item) => item.id === mpState.reviewActorId);
-    $("#mp-review-title").textContent = actor ? `${actor.name} 的复盘` : "复盘回放";
   }
 
-  $("#mp-review-count").textContent = `${reviews.length} decisions`;
+  $("#mp-review-count").textContent = `${reviews.length}`;
   if (!reviews.length) {
     const message = showingTable ? "这个玩家本手没有可复盘决策" : "对局中只显示你的即时复盘，本手结束后可切换查看其他玩家";
     $("#mp-review-list").innerHTML = `<div class="review-empty">${message}</div>`;
@@ -1734,7 +1741,7 @@ function renderMpReview(state) {
 
 function renderMpChat(state) {
   const messages = state?.chat || [];
-  $("#mp-chat-count").textContent = `${messages.length} messages`;
+  $("#mp-chat-count").textContent = `${messages.length}`;
   $("#mp-chat-input").disabled = !state?.me;
   $("#mp-chat-send").disabled = !state?.me;
   if (!messages.length) {
