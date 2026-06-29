@@ -851,20 +851,68 @@ function verdictFor(chosen, best) {
   return { label: "偏离", tone: "leak" };
 }
 
+// Human-like reaction time: snap the obvious, tank the close/big spots, paced by
+// personality (maniac fast & loose, rock deliberate). Fixed bot timing is the
+// single biggest "this is a robot" tell, so this varies it by decision difficulty,
+// action, pot size, and personality, plus the occasional long human tank.
+function humanThinkTime(player, actions, picked, toCall) {
+  const p = player.personality || {};
+  const sorted = [...actions].sort((a, b) => b.frequency - a.frequency);
+  const closeness = 1 - Math.min(1, ((sorted[0]?.frequency ?? 1) - (sorted[1]?.frequency ?? 0)) / 0.5);
+  let ms = 380 + closeness * 1100;                     // base + difficulty "tank"
+  ms += Math.min(700, (table.pot || 0) * 8);           // bigger pot -> more thought
+  if (picked.key === "check") ms *= 0.7;               // snap-check
+  if (picked.key === "fold" && toCall > 0) ms *= 0.82; // give up a touch faster
+  if (["jam", "raise", "raise-big", "bet-big", "bet-over"].includes(picked.key)) ms *= 1.25; // deliberate aggression
+  const speed = { maniac: 0.6, lag: 0.8, station: 1.0, balanced: 1.0, tag: 1.15, rock: 1.3 }[p.key] || 1;
+  ms *= speed;
+  if (closeness > 0.6 && Math.random() < 0.12) ms += 1200 + Math.random() * 1500; // rare deep tank
+  ms *= 0.8 + Math.random() * 0.5;                     // jitter
+  return Math.round(Math.max(350, Math.min(4200, ms)));
+}
+
+// Sparse, personality-flavored table talk so the table feels alive (not spammy).
+const CHAT_LINES = {
+  aggressive: ["压力给到你", "这把我来", "敢跟吗", "梭了梭了", "怕了？"],
+  fold: ["这手不行", "等张好牌", "让给你", "算了"],
+  call: ["我跟", "看看你有啥", "不信你有", "跟一个"],
+  value: ["价值下注", "标准线", "该下了"],
+  win: ["nice", "运气不错", "拿下"],
+};
+let lastBotChatTs = 0;
+
+function maybeBotChat(player, picked, toCall) {
+  if (Date.now() - lastBotChatTs < 9000) return;     // global cooldown
+  const key = player.personality?.key;
+  const aggressive = ["maniac", "lag"].includes(key);
+  let pool = null;
+  if (picked.key === "fold" && toCall > 0 && Math.random() < 0.05) pool = "fold";
+  else if (picked.key === "call" && (key === "station" || Math.random() < 0.03)) pool = "call";
+  else if (["jam", "raise-big", "bet-big", "bet-over"].includes(picked.key) && (aggressive ? Math.random() < 0.14 : Math.random() < 0.04))
+    pool = aggressive ? "aggressive" : "value";
+  if (!pool) return;
+  const lines = CHAT_LINES[pool];
+  lastBotChatTs = Date.now();
+  addChatMessage(player, lines[Math.floor(Math.random() * lines.length)]);
+}
+
 function queueAiIfNeeded() {
   clearAiTimers();
   const player = getPlayer(table.turnId);
   if (table.phase !== "playing" || player?.type !== "ai") return;
+  const recommendation = recommendFor(player);
+  const tunedActions = applyPersonality(recommendation.actions, player.personality);
+  const picked = pickAction(tunedActions, Math.random, player.personality?.temp || player.aiTemperature || 1);
+  const toCall = toCallFor(player);
+  const delay = humanThinkTime(player, tunedActions, picked, toCall);
   const timer = setTimeout(() => {
     pendingAiTimers.delete(timer);
     const current = getPlayer(table.turnId);
-    if (current?.type !== "ai") return;
-    const recommendation = recommendFor(current);
-    const tunedActions = applyPersonality(recommendation.actions, current.personality);
-    const picked = pickAction(tunedActions, Math.random, current.personality?.temp || current.aiTemperature || 1);
-    const action = actionForRecommendation(picked, recommendation, toCallFor(current));
+    if (current?.id !== player.id || current?.type !== "ai") return;
+    maybeBotChat(current, picked, toCall);
+    const action = actionForRecommendation(picked, recommendation, toCall);
     handlePlayerAction(current, action);
-  }, 650);
+  }, delay);
   pendingAiTimers.add(timer);
 }
 
