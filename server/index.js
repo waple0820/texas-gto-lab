@@ -1017,6 +1017,11 @@ function publicState(forPlayer = null) {
           isTurn: table.turnId === forPlayer.id,
           actionOptions: actionOptionsFor(forPlayer),
           advice: adviceFor(forPlayer),
+          // context for the client-side range matrix (the hero's GTO range for this spot)
+          position: forPlayer.inHand ? positionFor(forPlayer) : null,
+          context: forPlayer.inHand ? contextFor(forPlayer, toCallFor(forPlayer)) : null,
+          tableSize: activePlayers().length,
+          stackBb: Math.max(1, round(forPlayer.stack, 1)),
         }
       : null,
   };

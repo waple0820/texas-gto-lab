@@ -1307,6 +1307,61 @@ button:focus-visible {
   display: block;
 }
 
+/* Compact 13x13 GTO range matrix — the iconic solver visualization, hero hand lit. */
+.mp-range-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 9px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.mp-range-head strong { color: var(--text); font-size: 12px; font-weight: 800; }
+.mp-range-head em { color: var(--green-2); font-style: normal; font-weight: 800; }
+
+.mp-range-matrix {
+  display: grid;
+  grid-template-columns: repeat(13, 1fr);
+  gap: 2px;
+}
+
+.mp-range-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  border-radius: 3px;
+  /* frequency-weighted fill — green→blue by --weight, like the lab matrix */
+  background:
+    linear-gradient(180deg, rgba(69, 192, 139, calc(var(--weight) * 0.85)),
+      rgba(88, 150, 212, calc(var(--weight) * 0.25))),
+    #131a16;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.mp-range-cell span {
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(244, 241, 234, 0.86);
+  letter-spacing: -0.04em;
+}
+
+.mp-range-cell.is-empty span { color: rgba(151, 163, 155, 0.45); }
+.mp-range-cell.cell-pair { box-shadow: inset 2px 0 0 rgba(224, 178, 92, 0.8); }
+.mp-range-cell.cell-suited { box-shadow: inset 2px 0 0 rgba(88, 150, 212, 0.6); }
+.mp-range-cell.cell-offsuit { box-shadow: inset 2px 0 0 rgba(125, 137, 130, 0.45); }
+
+/* hero's actual hand — bright ring + lift so you instantly see where you are */
+.mp-range-cell.is-hero {
+  box-shadow: 0 0 0 2px var(--green-2), 0 0 12px rgba(69, 192, 139, 0.6);
+  z-index: 1;
+}
+
+.mp-range-cell.is-hero span { color: #fff; font-weight: 900; }
+
 /* The GTO decision station — the solver hero. A prominent accent-framed card with
    a big recommended-action callout, the full strategy mix, and the metric grid. */
 .mp-advice {
