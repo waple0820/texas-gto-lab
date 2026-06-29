@@ -1400,6 +1400,16 @@ button:focus-visible {
   box-shadow: var(--shadow-glow);
 }
 
+.advice-hero[hidden] {
+  display: none;
+}
+
+/* the lab output hero sits on the surface (no dark inner card like the battle one) */
+.output-panel .advice-hero {
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .advice-enter {
   animation: advice-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
