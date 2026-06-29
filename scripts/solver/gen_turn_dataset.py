@@ -189,22 +189,31 @@ def gen_one(seed):
     avg = solver.average_strategy()
 
     open_dist = avg[solver.root.index]                      # [n, 5]
-    facing_node = solver.root.children[1 + TURN_BETS.index(FACING_BET_FRAC)]  # ip_after_bet(0.66)
-    facing_raw = avg[facing_node.index]                     # [n, 3] = fold/call/raise
-    facing_dist = np.zeros((len(combos), 5), dtype=np.float32)
-    facing_dist[:, :3] = facing_raw                         # pad to 5: [fold, call, raise, 0, 0]
 
     eq = turn_equities(board, combos, valid)
     hist = equity_histogram(eq)
     wet, pa, mo, co = board_texture(board)
     pos = float(rng.choice(POSITION_SIGNALS))
-    bet = POT * FACING_BET_FRAC
-    pot_odds = bet / (POT + 2 * bet)
 
     Xo = turn_features(combos, board, eq, hist, wet, pa, mo, co, stack, pos, facing=False, pot_odds=0.0)
-    Xf = turn_features(combos, board, eq, hist, wet, pa, mo, co, stack, pos, facing=True, pot_odds=pot_odds)
-    X = np.concatenate([Xo, Xf], axis=0)
-    Y = np.concatenate([open_dist.astype(np.float32), facing_dist], axis=0)
+    blocks_X = [Xo]
+    blocks_Y = [open_dist.astype(np.float32)]
+    # Record the facing node at EVERY turn bet size (free from the same solve), so
+    # the model learns size-dependent defense (MDF) instead of a single 0.66-pot
+    # bet — the pot_odds feature spans the realistic range across these rows.
+    for frac in TURN_BETS:
+        facing_node = solver.root.children[1 + TURN_BETS.index(frac)]  # ip_after_bet(frac)
+        facing_raw = avg[facing_node.index]                # [n, 3] = fold/call/raise
+        facing_dist = np.zeros((len(combos), 5), dtype=np.float32)
+        facing_dist[:, :3] = facing_raw                    # pad to 5
+        bet = POT * frac
+        pot_odds = bet / (POT + 2 * bet)
+        blocks_X.append(turn_features(combos, board, eq, hist, wet, pa, mo, co, stack, pos,
+                                      facing=True, pot_odds=pot_odds))
+        blocks_Y.append(facing_dist)
+
+    X = np.concatenate(blocks_X, axis=0)
+    Y = np.concatenate(blocks_Y, axis=0)
     return X, Y, float(res["final"]["exploitability_pot_frac"])
 
 
