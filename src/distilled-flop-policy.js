@@ -149,13 +149,18 @@ function forward(values) {
   return exps.map((x) => x / total);
 }
 
-// Readiness gate — OFF. distill-flop-v1 looked great IN-DISTRIBUTION (A/B ON ~15%
-// vs OFF ~27% pot) but was trained only on SHALLOW stacks (SPR ~1.7-2.5), so it
-// extrapolates badly to the deep-SPR flops the engine commonly faces (e.g. a 95bb
-// single-raised pot, SPR ~16, where it wrongly checks ~94%). The A/B was misleading
-// because it tested at the same shallow SPR as training. Pending a retrain over a
-// realistic deep-SPR stack range, keep the engine's heuristic flop play (no
-// regression). The pipeline stays ready to regenerate + reflip.
+// Readiness gate — OFF (held to the same rigor bar as turn/river). The model is
+// now distill-flop-v2-deep, trained over a realistic SPR range (stacks 15-80, SPR
+// 2.5-13.3); it learned proper SPR conditioning — c-bet rises 1%->15%->30%->42%
+// as SPR goes 2->15, vs v1's flat ~94% check — and val_kl is 0.023. The shallow
+// A/B (SPR 2) is a clean win (ON 14.6% vs OFF 26.0% pot). BUT the deep regime the
+// app actually plays (~100bb, SPR ~13) cannot be rigorously A/B'd: the 3-street
+// Nash baseline does not converge at depth (both ON/OFF read ~157% — measurement
+// noise, not a flop signal), which is the documented "flop = GPU / card-abstraction
+// frontier". So deep superiority is unproven. Following the v1 lesson (looked fine
+// on checkable metrics, was wrong in the regime that mattered), keep the heuristic
+// flop play until a converging deep validator exists (batched-GPU solve or
+// abstraction). The pipeline + v2 artifact stay ready to reflip once validated.
 const FLOP_DISTILL_READY = false;
 
 // Distilled GTO policy for FLOP decisions: open (check / bet-mid, first 2 of the 3

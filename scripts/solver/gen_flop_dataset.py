@@ -54,9 +54,12 @@ FLOP_BETS = [0.66]
 TURN_BETS = [0.66]
 RIVER_BETS = [0.75]
 FACING_BET_FRAC = 0.66
+# Realistic deep-to-shallow stack range: the flop open is strongly SPR-dependent
+# (94% check at SPR 2 vs 60% c-bet at SPR 13), so the model must see the whole
+# range and learn it via spr_norm. 100bb single-raised pots are ~SPR 13.
 N_COMBOS = 60
-ITERATIONS = 4000
-STACKS = [10.0, 12.0, 15.0]
+ITERATIONS = 6000          # deep-stack flop converges slowly; needs more iters
+STACKS = [15.0, 30.0, 50.0, 80.0]   # SPR 2.5 / 5 / 8.3 / 13.3
 EQUITY_RUNOUTS = 150       # sampled turn+river runouts for the all-in equity feature
 
 OPEN_ACTIONS = ["check", "bet-mid"]
