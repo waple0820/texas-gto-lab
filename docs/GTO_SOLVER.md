@@ -204,6 +204,30 @@ npm run test:solver-flop   # ~25s convergence-trend guard (separate from test:so
 `test:solver-flop` is kept out of the bundled `test:solver` because each iteration
 is tree-bound (the river is enumerated), so it runs longer than the exact solvers.
 
+## Stage 4b — Batched-over-rivers GPU solvers (done; flop still frontier)
+
+The Stage-3 torch port was still Python-recursion-bound on the multi-street
+solvers (the flop port gave only ~1.3x). The fix is **batching the river
+enumeration**: solve B rivers as ONE pass over `(B, n[, A])` tensors instead of a
+B-way Python loop. Three pieces, each validated locally then benchmarked on the
+dual-5090 host:
+
+- `scripts/solver/batched_river.py` — B river games in parallel. Parity-exact vs
+  numpy `RiverSolver` (0.0000pp). **GPU 19.6x** at full range (4.6s vs 90.3s).
+- `scripts/solver/turn_batched.py` — turn betting (single reach) wrapping the
+  batched river core. Converges to 0 under an exact BR. **GPU 20.7x** full range.
+- `scripts/solver/flop_batched.py` — flop+turn betting + batched river, turn-
+  sampled. **Correct** (converges under an exact enumerated turn+river BR), self-
+  test passes.
+
+**Honest limit:** at deep SPR (~13, what the app plays) the *full* flop is NOT
+GPU-bound — turn-sampled MCCFR needs 10^5+ iters there (all-in utilities dwarf the
+pot, ~1/√T) and each iteration is Python-recursion + CPU sign-precompute bound, so
+the river batching doesn't dominate (GPU ≈ CPU). Deep flop targets still aren't
+feasibly converged; the flop distilled model stays gated. The river/turn batched
+cores are reusable 20x wins. Truly closing the flop needs a full tree-vectorization
+rewrite (flat scatter/gather tensors, zero per-node recursion, signs on GPU).
+
 ## Stage 5 — How far is the live engine from GTO? (measured)
 
 `scripts/solver/engine_exploitability.py` answers the project's original question
@@ -351,8 +375,10 @@ npm run measure:engine -- --board "Qc Jd 9s 4h 2c" --pot 10 --stack 20 --engine-
    (solved/distilled) are trusted for those specific checks while all structural
    invariants still apply. Disable for comparison with `DISABLE_DISTILL=1` /
    `globalThis.__ENABLE_DISTILL__ = false`.
-8. Speed/scale: GPU port of the flop solver + card abstraction to drive flop
-   exploitability to single digits; multiple bet sizes for facing nodes.
+8. Speed/scale: the batched-GPU river/turn cores (Stage 4b) are 20x and reusable;
+   the deep-SPR flop needs a full tree-vectorization rewrite (flat scatter/gather,
+   zero per-node recursion) to converge. Multiple bet sizes for facing nodes is
+   DONE on turn + river (the model defends by bet size; fold rises with the bet).
 
 The north star: replace heuristic blends with solver-derived strategies and watch
 the measured exploitability fall.
