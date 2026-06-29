@@ -26,6 +26,19 @@ import { AI_LEVELS, HoldemSimulator, STREET_LABELS } from "./simulator.js";
 
 const app = document.querySelector("#app");
 
+const CONTEXT_LABELS = {
+  unopened: "首先开池 (RFI)",
+  "check-option": "过牌选项",
+  "facing-open": "面对开池",
+  "blind-defense": "盲注防守",
+  "facing-3bet": "面对 3bet",
+  "single-raised": "单加注池",
+  "three-bet-pot": "3bet 池",
+  "facing-bet": "面对下注",
+  "facing-raise": "面对加注",
+  "limped-pot": "跛入池",
+};
+
 const labState = {
   hero: [],
   board: [],
@@ -334,11 +347,16 @@ app.innerHTML = `
             <div class="mp-feed">
               <div class="mp-feed-tabs" role="tablist">
                 <button class="mp-feed-tab is-active" data-feed="line"><i data-lucide="activity"></i><span>行动线</span><em id="mp-action-count">0</em></button>
+                <button class="mp-feed-tab" data-feed="range"><i data-lucide="grid-3x3"></i><span>范围</span></button>
                 <button class="mp-feed-tab" data-feed="review"><i data-lucide="git-compare"></i><span>复盘</span><em id="mp-review-count">0</em></button>
                 <button class="mp-feed-tab" data-feed="chat"><i data-lucide="message-circle"></i><span>聊天</span><em id="mp-chat-count">0</em></button>
               </div>
               <div class="mp-feed-panel is-active" data-feed-panel="line">
                 <div class="action-line" id="mp-action-line"></div>
+              </div>
+              <div class="mp-feed-panel" data-feed-panel="range">
+                <div class="mp-range-head"><span id="mp-range-meta">入座后显示你的 GTO 范围</span></div>
+                <div class="mp-range-matrix" id="mp-range-matrix"></div>
               </div>
               <div class="mp-feed-panel" data-feed-panel="review">
                 <div class="review-tabs" id="mp-review-tabs" hidden></div>
@@ -1359,9 +1377,50 @@ function renderMultiplayer() {
   renderMpAdvice(state);
   renderMpActions(state);
   renderMpActionLine(state);
+  renderMpRange(state);
   renderMpReview(state);
   renderMpChat(state);
   hydrateIcons();
+}
+
+// Range matrix in the battle view — the iconic solver visualization. Shows the
+// hero's GTO range for the current position/context (frequency-weighted 13x13),
+// with the hero's actual hand highlighted: "this is your range, you're here".
+function renderMpRange(state) {
+  const me = state?.me;
+  const meta = $("#mp-range-meta");
+  const grid = $("#mp-range-matrix");
+  if (!me || !me.position || !me.context) {
+    meta.textContent = me ? "本手未参与 / 等待发牌" : "入座后显示你的 GTO 范围";
+    grid.innerHTML = "";
+    return;
+  }
+  const weights = buildRangeWeights({
+    style: "balanced",
+    position: me.position,
+    context: me.context,
+    tableSize: me.tableSize || 2,
+    stackBb: me.stackBb || 100,
+  });
+  const heroCode = me.hole?.length === 2 ? handCodeFromCards(me.hole) : null;
+  const coverage = me.position ? rangeCoverage(weights) : null;
+  const ctxLabel = CONTEXT_LABELS[me.context] || me.context;
+  meta.innerHTML = `<strong>${me.position} · ${escapeHtml(ctxLabel)}</strong>` +
+    (coverage ? ` <span>${round(coverage.percent * 100, 1)}% · ${coverage.combos} combos</span>` : "") +
+    (heroCode ? ` <em>你: ${heroCode}</em>` : "");
+  const cells = [];
+  for (let row = 0; row < RANKS.length; row += 1) {
+    for (let col = 0; col < RANKS.length; col += 1) {
+      const code = matrixCode(row, col);
+      const weight = Number(weights[code] || 0);
+      const cellType = row === col ? "cell-pair" : row < col ? "cell-suited" : "cell-offsuit";
+      const isHero = code === heroCode;
+      cells.push(
+        `<div class="mp-range-cell ${cellType} ${weight <= 0 ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="--weight:${weight}" title="${code} ${Math.round(weight * 100)}%"><span>${code}</span></div>`,
+      );
+    }
+  }
+  grid.innerHTML = cells.join("");
 }
 
 // Tabbed sidebar feed (行动线 / 复盘 / 聊天) — one panel at a time, no scroll fatigue.
