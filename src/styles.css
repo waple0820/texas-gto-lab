@@ -1,21 +1,30 @@
 :root {
   color-scheme: dark;
-  --bg: #101412;
-  --surface: #171d1a;
-  --surface-2: #1e2723;
-  --line: #334039;
-  --line-soft: rgba(255, 255, 255, 0.08);
-  --text: #f3f0e8;
-  --muted: #9ca89f;
+  --bg: #0c0f0e;
+  --bg-2: #0a0d0c;
+  --surface: #141a17;
+  --surface-2: #1b221e;
+  --surface-3: #222b26;
+  --line: #2b3631;
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --text: #f4f1ea;
+  --muted: #97a39b;
+  --muted-2: #6f7b74;
   --green: #2f8d68;
-  --green-2: #43b883;
-  --amber: #d7a84d;
-  --red: #c95050;
-  --blue: #4f8fcf;
+  --green-2: #45c08b;
+  --amber: #e0b25c;
+  --red: #d35d5d;
+  --blue: #5896d4;
+  --violet: #9a86e0;
   --felt: #184d3a;
   --ink: #141716;
   --card: #f7f2e8;
-  --radius: 8px;
+  --radius: 9px;
+  --radius-lg: 14px;
+  --radius-sm: 6px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.32);
+  --shadow-glow: 0 0 0 1px rgba(69, 192, 139, 0.18), 0 8px 28px rgba(11, 40, 28, 0.5);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -33,9 +42,14 @@ body,
 
 body {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 280px),
+    radial-gradient(1200px 480px at 50% -8%, rgba(69, 192, 139, 0.06), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 320px),
     var(--bg);
   color: var(--text);
+  /* tabular numbers make every stat align — core to a pro solver's feel */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -60,29 +74,33 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px;
+  padding: 13px 22px;
   border-bottom: 1px solid var(--line);
-  background: rgba(16, 20, 18, 0.94);
-  backdrop-filter: blur(16px);
+  background: linear-gradient(180deg, rgba(20, 26, 23, 0.92), rgba(12, 15, 14, 0.9));
+  backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 6px 24px rgba(0, 0, 0, 0.28);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
   min-width: 0;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(215, 168, 77, 0.5);
-  border-radius: var(--radius);
-  background: #202019;
-  color: var(--amber);
-  font-weight: 800;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(69, 192, 139, 0.45);
+  border-radius: 11px;
+  background: linear-gradient(160deg, rgba(69, 192, 139, 0.22), rgba(20, 26, 23, 0.6));
+  color: var(--green-2);
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 16px rgba(69, 192, 139, 0.18);
 }
 
 .brand h1 {
@@ -104,8 +122,9 @@ button {
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: #111614;
+  border-radius: 11px;
+  background: rgba(8, 11, 10, 0.6);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .tab-button,
@@ -144,11 +163,22 @@ button {
   height: 17px;
 }
 
+.tab-button {
+  font-weight: 650;
+}
+
+.tab-button:hover,
+.segmented button:hover {
+  color: var(--text);
+  border-color: var(--line);
+}
+
 .tab-button.is-active,
 .segmented button.is-active {
-  background: #223b31;
-  border-color: rgba(67, 184, 131, 0.6);
+  background: linear-gradient(180deg, rgba(69, 192, 139, 0.22), rgba(34, 59, 49, 0.5));
+  border-color: rgba(69, 192, 139, 0.55);
   color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 14px rgba(69, 192, 139, 0.16);
 }
 
 main {
@@ -173,13 +203,15 @@ main {
 .panel,
 .table-panel {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 64px),
+    var(--surface);
+  box-shadow: var(--shadow-2);
 }
 
 .panel {
-  padding: 14px;
+  padding: 15px;
 }
 
 .panel-head {
@@ -188,13 +220,16 @@ main {
   justify-content: space-between;
   gap: 12px;
   min-height: 30px;
-  margin-bottom: 12px;
+  margin-bottom: 13px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .panel-head h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 750;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .panel-head span,
@@ -223,8 +258,17 @@ main {
 .range-cell:hover,
 .sim-actions button:hover,
 .primary-action:hover {
-  border-color: rgba(67, 184, 131, 0.5);
+  border-color: rgba(69, 192, 139, 0.55);
   transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+.icon-button:active,
+.sim-actions button:active,
+.primary-action:active,
+.tab-button:active {
+  transform: translateY(0);
+  filter: brightness(0.97);
 }
 
 .slot-block {
@@ -1190,26 +1234,115 @@ button:focus-visible {
 /* Live GTO decision station shown above the action buttons on the hero's turn.
    Reuses .action-mix / .metric-grid / .policy-source-row from the lab readout so
    it matches the analysis surface, framed in the GTO green accent. */
+/* The GTO decision station — the solver hero. A prominent accent-framed card with
+   a big recommended-action callout, the full strategy mix, and the metric grid. */
 .mp-advice {
   display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(67, 184, 131, 0.38);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(67, 184, 131, 0.09), rgba(67, 184, 131, 0.02));
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid rgba(69, 192, 139, 0.42);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(69, 192, 139, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(69, 192, 139, 0.06), rgba(0, 0, 0, 0.06));
+  box-shadow: var(--shadow-glow);
+}
+
+.mp-advice.info {
+  border-color: rgba(88, 150, 212, 0.42);
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(88, 150, 212, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(88, 150, 212, 0.05), rgba(0, 0, 0, 0.06));
+}
+
+.mp-advice .subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .mp-advice .subhead strong {
   color: var(--green-2);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Hero callout: the GTO-preferred action, large and unmissable. */
+.advice-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--line-soft);
+}
+
+.advice-hero-main {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
+}
+
+.advice-hero-label {
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.advice-hero-main strong {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.advice-hero-main.danger strong { color: #ef9a9a; }
+.advice-hero-main.accent strong { color: #f3d79a; }
+.advice-hero-main.strong strong { color: #ffc9a3; }
+.advice-hero-main.neutral strong { color: var(--green-2); }
+
+.advice-hero-freq {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--green-2);
+}
+
+.advice-hero-tag {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.advice-note {
+  color: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.01em;
 }
 
 .mp-advice .action-mix {
-  gap: 6px;
+  gap: 7px;
 }
 
 .mp-advice .metric-grid {
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 0;
+}
+
+.mp-advice .metric {
+  min-height: 52px;
+  padding: 7px 9px;
 }
 
 .mp-seat-meta {
@@ -1832,9 +1965,11 @@ button:focus-visible {
 }
 
 .sim-actions button {
-  min-height: 42px;
+  min-height: 46px;
   background: #17201c;
   font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--shadow-1);
 }
 
 /* Color-code action buttons by type (poker reads at a glance). */

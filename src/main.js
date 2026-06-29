@@ -316,14 +316,12 @@ app.innerHTML = `
             <div class="mp-advice" id="mp-advice" hidden>
               <div class="subhead">
                 <strong>GTO 建议</strong>
-                <span id="mp-advice-tag">轮到你行动</span>
-              </div>
-              <div class="policy-source-row" id="mp-advice-policy">
                 <span class="policy-badge" id="mp-advice-badge"></span>
-                <span class="policy-note" id="mp-advice-note"></span>
               </div>
+              <div class="advice-hero" id="mp-advice-hero"></div>
               <div class="action-mix" id="mp-advice-mix"></div>
               <div class="metric-grid" id="mp-advice-metrics"></div>
+              <div class="advice-note" id="mp-advice-note"></div>
             </div>
             <div class="sim-actions" id="mp-actions"></div>
             <div class="showdown-shell" id="mp-showdown-shell" hidden>
@@ -1519,12 +1517,24 @@ function renderMpAdvice(state) {
   }
   shell.hidden = false;
   const badge = POLICY_BADGES[advice.policySource?.type] || POLICY_BADGES.heuristic;
-  $("#mp-advice-policy").className = `policy-source-row ${badge.kind}`;
+  const sorted = [...advice.actions].sort((a, b) => b.frequency - a.frequency);
+  const top = sorted[0];
+  const mixed = sorted.filter((a) => a.frequency >= 0.12).length > 1;
+  shell.className = `mp-advice ${badge.kind}`;
   $("#mp-advice-badge").textContent = badge.label;
-  const version = advice.policySource?.version ? ` · ${advice.policySource.version}` : "";
+  $("#mp-advice-badge").className = `policy-badge`;
+  // Hero callout: the GTO-preferred action, big and glanceable (pure mix => "混合").
+  $("#mp-advice-hero").innerHTML = `
+    <div class="advice-hero-main ${top?.tone || ""}">
+      <span class="advice-hero-label">建议</span>
+      <strong>${escapeHtml(top?.label || "—")}</strong>
+      <span class="advice-hero-freq">${pct(top?.frequency || 0, 0)}</span>
+    </div>
+    <span class="advice-hero-tag">${mixed ? "混合策略" : "纯策略"}</span>
+  `;
+  const version = advice.policySource?.version ? ` · ${advice.policySource.version.split("+")[0]}` : "";
   $("#mp-advice-note").textContent = `${badge.note}${version}`;
-  $("#mp-advice-mix").innerHTML = [...advice.actions]
-    .sort((a, b) => b.frequency - a.frequency)
+  $("#mp-advice-mix").innerHTML = sorted
     .map(
       (action) => `
         <div class="mix-row ${action.tone || ""}">
