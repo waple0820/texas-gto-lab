@@ -1388,6 +1388,7 @@ function renderMultiplayer() {
   $("#mp-add-ai").disabled = !state?.me || !state.canAddAi;
 
   bindMpFeedTabs();
+  setupMpHotkeys();
   renderMpSeats(state);
   renderMpCenter(state);
   renderMpAdvice(state);
@@ -1437,6 +1438,29 @@ function renderMpRange(state) {
     }
   }
   grid.innerHTML = cells.join("");
+}
+
+// Keyboard shortcuts for the action buttons (F fold / C check-call / A all-in /
+// digits for bet sizes) — fast play like a pro tool. Bound once; ignores typing.
+let mpHotkeysBound = false;
+function setupMpHotkeys() {
+  if (mpHotkeysBound) return;
+  mpHotkeysBound = true;
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const view = document.querySelector('.view[data-view="multi"]');
+    if (!view || !view.classList.contains("is-active")) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const key = e.key.toLowerCase();
+    const btn = document.querySelector(`#mp-actions button[data-key="${key}"]`);
+    if (btn) {
+      e.preventDefault();
+      btn.classList.add("key-press");
+      setTimeout(() => btn.classList.remove("key-press"), 150);
+      btn.click();
+    }
+  });
 }
 
 // Tabbed sidebar feed (行动线 / 复盘 / 聊天) — one panel at a time, no scroll fatigue.
@@ -1689,14 +1713,17 @@ function renderMpActions(state) {
     const gto = gtoFreqForButtons(state.me.advice, options);
     const bestId = Object.keys(gto).sort((a, b) => gto[b] - gto[a])[0];
     const bestFreq = bestId ? gto[bestId] : 0;
+    let sizeDigit = 0; // 1..n for the bet/raise sizing buttons, in order
     $("#mp-actions").innerHTML = options
       .map((option) => {
         const tone = actionTone(option.id);
         const f = gto[option.id] || 0;
         const isGto = option.id === bestId && bestFreq > 0;
         const badge = f > 0 ? `<em class="act-freq">${pct(f, 0)}</em>` : "";
-        return `<button class="${tone} ${isGto ? "is-gto" : ""}" data-mp-action="${option.id}">
-          <i data-lucide="${BUTTON_ICON[tone] || "circle"}"></i><span>${escapeHtml(option.label)}</span>${badge}
+        // hotkey: F fold / C check-call / A all-in / digits for sizings
+        const key = tone === "act-fold" ? "f" : tone === "act-call" ? "c" : tone === "act-allin" ? "a" : String(++sizeDigit);
+        return `<button class="${tone} ${isGto ? "is-gto" : ""}" data-mp-action="${option.id}" data-key="${key}">
+          <kbd class="act-key">${key.toUpperCase()}</kbd><i data-lucide="${BUTTON_ICON[tone] || "circle"}"></i><span>${escapeHtml(option.label)}</span>${badge}
         </button>`;
       })
       .join("");
