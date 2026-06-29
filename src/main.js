@@ -1677,20 +1677,30 @@ function renderMpReview(state) {
   const orderedReviews = reviews.slice().sort((a, b) => (b.actionOrder || 0) - (a.actionOrder || 0));
   $("#mp-review-list").innerHTML = orderedReviews
     .map(
-      (item, index) => `
+      (item, index) => {
+        const badge = POLICY_BADGES[item.policySource?.type] || POLICY_BADGES.heuristic;
+        const metrics = [
+          ["选择", `${escapeHtml(item.chosenLabel)} ${pct(item.chosenFrequency, 0)}`],
+          ["最优", `${escapeHtml(item.bestLabel)} ${pct(item.bestFrequency, 0)}`],
+          ["权益", pct(item.equity, 0)],
+          ["赔率", item.potOdds > 0 ? pct(item.potOdds, 0) : "—"],
+          ["SPR", item.spr != null ? round(item.spr, 1) : "—"],
+          ["尺度", escapeHtml(item.sizing || "—")],
+        ];
+        return `
         <article class="review-item ${item.verdict.tone}">
-          <div class="review-title">
-            <strong>${item.actionOrder || orderedReviews.length - index}. ${escapeHtml(item.actor || "Hero")} · ${STREET_LABELS[item.street] || item.street} · ${escapeHtml(item.chosenLabel)}</strong>
-            <span>${escapeHtml(item.verdict.label)} ${pct(item.chosenFrequency, 0)}</span>
+          <div class="review-head">
+            <div class="review-head-main">
+              <span class="review-order">${item.actionOrder || orderedReviews.length - index}</span>
+              <strong>${escapeHtml(item.actor || "Hero")}</strong>
+              <span class="review-street">${STREET_LABELS[item.street] || item.street}</span>
+            </div>
+            <span class="review-verdict ${item.verdict.tone}">${escapeHtml(item.verdict.label)}</span>
           </div>
-          <div class="review-meta">
-            <span>#${item.actionOrder || index + 1}</span>
-            <span>最优 ${escapeHtml(item.bestLabel)} ${pct(item.bestFrequency, 0)}</span>
-            <span>Eq ${pct(item.equity, 0)}</span>
-            <span>Odds ${pct(item.potOdds, 0)}</span>
-            <span>${escapeHtml(item.sizing)}</span>
+          <div class="review-metrics">
+            ${metrics.map(([k, v]) => `<div class="review-metric"><span>${k}</span><strong>${v}</strong></div>`).join("")}
           </div>
-          ${renderReviewSizes(item)}
+          <div class="review-policy ${badge.kind}"><span class="policy-badge">${badge.label}</span><span>${badge.note}</span></div>
           <div class="review-mix">
             ${item.mix
               .map(
@@ -1704,11 +1714,10 @@ function renderMpReview(state) {
               )
               .join("")}
           </div>
-          <div class="review-tags">
-            ${item.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}
-          </div>
+          ${item.reasons.length ? `<div class="review-tags">${item.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
         </article>
-      `,
+      `;
+      },
     )
     .join("");
 }
