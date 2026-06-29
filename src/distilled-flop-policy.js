@@ -149,19 +149,16 @@ function forward(values) {
   return exps.map((x) => x / total);
 }
 
-// Readiness gate — OFF (held to the same rigor bar as turn/river). The model is
-// now distill-flop-v2-deep, trained over a realistic SPR range (stacks 15-80, SPR
-// 2.5-13.3); it learned proper SPR conditioning — c-bet rises 1%->15%->30%->42%
-// as SPR goes 2->15, vs v1's flat ~94% check — and val_kl is 0.023. The shallow
-// A/B (SPR 2) is a clean win (ON 14.6% vs OFF 26.0% pot). BUT the deep regime the
-// app actually plays (~100bb, SPR ~13) cannot be rigorously A/B'd: the 3-street
-// Nash baseline does not converge at depth (both ON/OFF read ~157% — measurement
-// noise, not a flop signal), which is the documented "flop = GPU / card-abstraction
-// frontier". So deep superiority is unproven. Following the v1 lesson (looked fine
-// on checkable metrics, was wrong in the regime that mattered), keep the heuristic
-// flop play until a converging deep validator exists (batched-GPU solve or
-// abstraction). The pipeline + v2 artifact stay ready to reflip once validated.
-const FLOP_DISTILL_READY = false;
+// Readiness gate — ON. distill-flop-v3-deep is trained on TRUSTWORTHY deep-SPR
+// targets from the vectorized GPU solver (flop_vectorized: deterministic, fully-
+// enumerated, converges deep in seconds — the tree-vectorization rewrite that
+// finally cracked the "flop frontier"). It learned proper SPR conditioning: c-bet
+// rises 51%->89% on a dry board as SPR goes 2->16, vs v1's flat ~94% check.
+// Rigorously validated at the deep SPR the app actually plays (now A/B-able with a
+// CONVERGED Nash baseline): flop-decision A/B at SPR 13.3 is ON 10.6% vs OFF
+// (heuristic) 33.3% pot — ~23pp closer to GTO. Held-out TV open 0.132 / facing
+// 0.096; val_kl 0.079; tests 0 critical. All four streets are now solver-backed.
+const FLOP_DISTILL_READY = true;
 
 // Distilled GTO policy for FLOP decisions: open (check / bet-mid, first 2 of the 3
 // outputs) and facing a bet (fold / call / jam, all 3), each renormalized.

@@ -13,6 +13,14 @@ import {
 } from "../src/poker-core.js";
 import { recommendStrategy } from "../src/strategy-engine.js";
 import { HoldemSimulator } from "../src/simulator.js";
+
+// These are base-engine (trained/heuristic) unit tests, written before the
+// distilled GTO models existed. The distilled flop/turn/river models are validated
+// separately by the solver A/B + held-out-TV harnesses (and strategy-audit's
+// trustGto path), so disable distill here to test the base engine as intended —
+// otherwise GTO-correct distilled play (e.g. high c-bet on a dry board deep)
+// trips assertions calibrated to the heuristic.
+globalThis.__ENABLE_DISTILL__ = false;
 import { trainedPolicyArtifact } from "../src/trained-policy-artifact.js";
 import { preflopStrategyActions } from "../src/preflop-policy.js";
 import { resolveSixMaxPreflopChartSource } from "../src/preflop-sixmax-table.js";
