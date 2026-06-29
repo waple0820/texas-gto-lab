@@ -2130,11 +2130,56 @@ button:focus-visible {
 }
 
 .sim-actions button {
-  min-height: 46px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 48px;
   background: #17201c;
   font-weight: 800;
   letter-spacing: 0.01em;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--shadow-1);
+}
+
+.sim-actions button svg { width: 15px; height: 15px; opacity: 0.85; }
+
+/* GTO frequency badge on each action button — the strategy reads on the buttons. */
+.act-freq {
+  font-style: normal;
+  min-width: 30px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* the GTO-preferred button this turn — a clear, calm ring + corner tag */
+.sim-actions button.is-gto {
+  border-color: rgba(69, 192, 139, 0.85);
+  box-shadow: 0 0 0 1px rgba(69, 192, 139, 0.6), 0 0 16px rgba(69, 192, 139, 0.28);
+}
+
+.sim-actions button.is-gto .act-freq {
+  background: rgba(69, 192, 139, 0.26);
+  color: #d6f7e6;
+}
+
+.sim-actions button.is-gto::after {
+  content: "GTO";
+  position: absolute;
+  top: -7px;
+  right: 8px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--green-2);
+  color: #07120d;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  box-shadow: 0 0 10px rgba(69, 192, 139, 0.5);
 }
 
 /* Color-code action buttons by type (poker reads at a glance). */

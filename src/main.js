@@ -1633,6 +1633,36 @@ function renderMpAdvice(state) {
     .join("");
 }
 
+// Map the GTO action-mix onto the concrete action buttons present this turn, so the
+// strategy reads directly on the buttons (like GTO Wizard): each advice action's
+// frequency is assigned to the first candidate button that exists.
+const ACTION_TO_BUTTON = {
+  fold: ["fold"],
+  check: ["check-call"],
+  call: ["check-call"],
+  "bet-small": ["third", "half"],
+  "bet-mid": ["half", "two-thirds"],
+  "bet-big": ["pot"],
+  "bet-over": ["overbet", "allin"],
+  "raise-small": ["half", "pot"],
+  "raise-big": ["pot", "overbet"],
+  jam: ["allin", "pot"],
+  raise: ["pot", "half"],
+};
+const BUTTON_ICON = { "act-fold": "x", "act-call": "check", "act-bet": "coins", "act-allin": "flame" };
+
+function gtoFreqForButtons(advice, options) {
+  const ids = new Set(options.map((o) => o.id));
+  const freq = {};
+  if (!advice?.actions) return freq;
+  for (const action of advice.actions) {
+    const cands = ACTION_TO_BUTTON[action.key] || [];
+    const target = cands.find((id) => ids.has(id)) || (ids.has("check-call") && (action.key === "check" || action.key === "call") ? "check-call" : null);
+    if (target) freq[target] = (freq[target] || 0) + (action.frequency || 0);
+  }
+  return freq;
+}
+
 function renderMpActions(state) {
   const options = state?.me?.actionOptions || [];
   if (!state?.me) {
@@ -1640,7 +1670,20 @@ function renderMpActions(state) {
     return;
   }
   if (options.length) {
-    $("#mp-actions").innerHTML = options.map((option) => `<button class="${actionTone(option.id)}" data-mp-action="${option.id}">${escapeHtml(option.label)}</button>`).join("");
+    const gto = gtoFreqForButtons(state.me.advice, options);
+    const bestId = Object.keys(gto).sort((a, b) => gto[b] - gto[a])[0];
+    const bestFreq = bestId ? gto[bestId] : 0;
+    $("#mp-actions").innerHTML = options
+      .map((option) => {
+        const tone = actionTone(option.id);
+        const f = gto[option.id] || 0;
+        const isGto = option.id === bestId && bestFreq > 0;
+        const badge = f > 0 ? `<em class="act-freq">${pct(f, 0)}</em>` : "";
+        return `<button class="${tone} ${isGto ? "is-gto" : ""}" data-mp-action="${option.id}">
+          <i data-lucide="${BUTTON_ICON[tone] || "circle"}"></i><span>${escapeHtml(option.label)}</span>${badge}
+        </button>`;
+      })
+      .join("");
   } else if (state.phase === "playing") {
     $("#mp-actions").innerHTML = `<div class="waiting">${state.turnId ? "等待其他玩家行动" : "等待发牌"}</div>`;
   } else {
