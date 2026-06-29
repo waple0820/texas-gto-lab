@@ -1582,7 +1582,15 @@ function renderMpAdvice(state) {
   const shell = $("#mp-advice");
   if (!advice || !advice.actions?.length) {
     shell.hidden = true;
+    shell.dataset.shown = "";
     return;
+  }
+  // one-shot entrance animation when the station first appears (your turn begins)
+  if (shell.hidden || !shell.dataset.shown) {
+    shell.classList.remove("advice-enter");
+    void shell.offsetWidth; // reflow to restart the animation
+    shell.classList.add("advice-enter");
+    shell.dataset.shown = "1";
   }
   shell.hidden = false;
   const badge = POLICY_BADGES[advice.policySource?.type] || POLICY_BADGES.heuristic;
