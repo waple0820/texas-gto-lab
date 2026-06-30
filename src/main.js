@@ -1464,9 +1464,23 @@ function renderMpRange(state) {
   }
 }
 
+// Drop sub-threshold action slivers (neural-net / MC fitting noise) and renormalize
+// so the matrix shows clean color bands. We DON'T snap to 5% steps — real solvers
+// (GTO Wizard) display precise frequencies, so snapping would look less authentic;
+// we only suppress the <2.5% noise that clutters a 169-cell scan.
+function tidyMix(mix, threshold = 0.025) {
+  const r = (mix.raise || 0) >= threshold ? mix.raise : 0;
+  const c = (mix.call || 0) >= threshold ? mix.call : 0;
+  const f = (mix.fold || 0) >= threshold ? mix.fold : 0;
+  const total = r + c + f;
+  if (total <= 0) return { raise: mix.raise || 0, call: mix.call || 0, fold: mix.fold || 0 };
+  return { raise: r / total, call: c / total, fold: f / total };
+}
+
 // One range cell colored by its action mix: raise(red) | call(green) | fold(grey)
 // as a horizontal frequency gradient — the GTO Wizard signature.
-function strategyCellHtml(code, mix, cellType, isHero) {
+function strategyCellHtml(code, rawMix, cellType, isHero) {
+  const mix = tidyMix(rawMix);
   const rp = Math.round((mix.raise || 0) * 100);
   const cp = Math.round(((mix.raise || 0) + (mix.call || 0)) * 100);
   const grad = `linear-gradient(90deg, var(--red) 0 ${rp}%, var(--green-2) ${rp}% ${cp}%, rgba(120,130,124,0.18) ${cp}% 100%)`;
