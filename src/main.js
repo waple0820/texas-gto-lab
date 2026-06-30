@@ -60,6 +60,8 @@ const mpState = {
   sessionReviews: [],
   sessionSeen: new Set(),
   pendingQuickStart: false,
+  autoContinue: true,
+  autoReadyTimer: null,
 };
 
 const PRACTICE_SPOTS = [
@@ -346,6 +348,7 @@ app.innerHTML = `
             <div class="mp-toolbar">
               <button id="mp-ready">举手准备</button>
               <button id="mp-add-ai">添加电脑</button>
+              <button id="mp-autocontinue" class="toggle is-on"><i data-lucide="repeat"></i><span>自动下一手</span></button>
               <button id="mp-copy-link">复制邀请链接</button>
             </div>
             <div class="mp-advice" id="mp-advice" hidden>
@@ -1364,6 +1367,27 @@ function randomGuestName() {
   return `牌手${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+// Auto-continue: after a showdown, re-ready the hero automatically (after a short
+// pause so the result is visible) so practice play flows hand-after-hand without
+// clicking 举手准备 every time. Toggle off to stop and review at your own pace.
+function maybeAutoContinue(state) {
+  const me = state?.me;
+  const showdown = state?.phase === "showdown";
+  if (mpState.autoContinue && showdown && me && !me.ready && !mpState.autoReadyTimer) {
+    mpState.autoReadyTimer = setTimeout(() => {
+      mpState.autoReadyTimer = null;
+      const s = mpState.state;
+      if (mpState.autoContinue && s?.phase === "showdown" && s?.me && !s.me.ready) {
+        mpSend({ type: "ready" });
+      }
+    }, 2600);
+  }
+  if (!showdown && mpState.autoReadyTimer) {
+    clearTimeout(mpState.autoReadyTimer);
+    mpState.autoReadyTimer = null;
+  }
+}
+
 // Switch the active top-level view (tab). Used by the nav and the welcome overlay.
 function switchTab(name) {
   $$(".tab-button").forEach((item) => item.classList.toggle("is-active", item.dataset.tab === name));
@@ -1457,6 +1481,7 @@ function renderMultiplayer() {
   renderMpActions(state);
   renderMpActionLine(state);
   renderMpRange(state);
+  maybeAutoContinue(state);
   accumulateSessionReviews(state);
   renderMpReport(state);
   renderMpReview(state);
@@ -2394,6 +2419,11 @@ function wireEvents() {
   $("#mp-ready").addEventListener("click", () => mpSend({ type: "ready" }));
   $("#mp-table-ready").addEventListener("click", () => mpSend({ type: "ready" }));
   $("#mp-add-ai").addEventListener("click", () => mpSend({ type: "add_ai" }));
+  $("#mp-autocontinue").addEventListener("click", () => {
+    mpState.autoContinue = !mpState.autoContinue;
+    $("#mp-autocontinue").classList.toggle("is-on", mpState.autoContinue);
+    if (mpState.autoContinue && mpState.state) maybeAutoContinue(mpState.state);
+  });
   $("#mp-copy-link").addEventListener("click", copyInviteLink);
   $("#mp-chat-send").addEventListener("click", sendMpChat);
   $("#mp-chat-input").addEventListener("keydown", (event) => {
