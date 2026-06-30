@@ -98,6 +98,22 @@ const practiceState = {
 
 app.innerHTML = `
   <div class="app-shell">
+    <div class="welcome-overlay" id="welcome-overlay" hidden>
+      <div class="welcome-card">
+        <div class="welcome-brand"><span class="brand-mark">GTO</span><span>Texas GTO Lab</span></div>
+        <h2 class="welcome-title">和 GTO 对战,边打边纠错</h2>
+        <p class="welcome-sub">你的 AI 扑克教练 —— 和 GTO 机器人实战,每个决策即时打分,打完自动生成你的<strong>漏洞报告</strong>。</p>
+        <div class="welcome-modes">
+          <div class="welcome-mode hot"><i data-lucide="zap"></i><b>对战桌</b><span>实战 + 即时纠错 + 漏洞报告</span></div>
+          <div class="welcome-mode"><i data-lucide="dumbbell"></i><b>翻前练习</b><span>刷翻前范围,快速练手感</span></div>
+          <div class="welcome-mode"><i data-lucide="calculator"></i><b>策略台</b><span>查任意局面的 GTO 策略与范围</span></div>
+        </div>
+        <div class="welcome-cta">
+          <button class="primary-action" id="welcome-start"><i data-lucide="zap"></i><span>立即开始对战</span></button>
+          <button class="ghost-action" id="welcome-skip"><span>随便逛逛</span></button>
+        </div>
+      </div>
+    </div>
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark">GTO</span>
@@ -1348,6 +1364,37 @@ function randomGuestName() {
   return `牌手${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+// Switch the active top-level view (tab). Used by the nav and the welcome overlay.
+function switchTab(name) {
+  $$(".tab-button").forEach((item) => item.classList.toggle("is-active", item.dataset.tab === name));
+  $$(".view").forEach((view) => view.classList.toggle("is-active", view.dataset.view === name));
+  hydrateIcons();
+}
+
+// First-run welcome overlay — orients a new visitor and routes them straight into
+// the core loop (play vs GTO). Shown once per browser.
+function setupWelcome() {
+  const overlay = $("#welcome-overlay");
+  if (!overlay) return;
+  const dismiss = () => {
+    overlay.hidden = true;
+    try { localStorage.setItem("tgl-welcomed", "1"); } catch { /* ignore */ }
+  };
+  if (!localStorage.getItem("tgl-welcomed")) {
+    overlay.hidden = false;
+    hydrateIcons();
+  }
+  $("#welcome-skip")?.addEventListener("click", dismiss);
+  $("#welcome-start")?.addEventListener("click", () => {
+    dismiss();
+    switchTab("multi");
+    $("#mp-quick")?.click();
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) dismiss();
+  });
+}
+
 function connectMultiplayer(name) {
   if (mpState.ws) mpState.ws.close();
   mpState.name = name.trim();
@@ -2293,12 +2340,9 @@ function queueAiIfNeeded() {
 
 function wireEvents() {
   $$(".tab-button").forEach((button) => {
-    button.addEventListener("click", () => {
-      $$(".tab-button").forEach((item) => item.classList.toggle("is-active", item === button));
-      $$(".view").forEach((view) => view.classList.toggle("is-active", view.dataset.view === button.dataset.tab));
-      hydrateIcons();
-    });
+    button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
+  setupWelcome();
 
   $$(".target-tabs button").forEach((button) => {
     button.addEventListener("click", () => {
