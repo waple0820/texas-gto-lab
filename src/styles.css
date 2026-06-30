@@ -2135,24 +2135,41 @@ button:focus-visible {
 
 .mp-toolbar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .mp-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 40px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #17201c;
   color: var(--text);
   font-weight: 800;
+  font-size: 13px;
   cursor: pointer;
 }
+.mp-toolbar button svg { width: 15px; height: 15px; }
 
 .mp-toolbar button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }
+
+/* auto-continue toggle: green when on, muted when off */
+.mp-toolbar button.toggle.is-on {
+  border-color: rgba(69, 192, 139, 0.5);
+  background: rgba(69, 192, 139, 0.12);
+  color: var(--green-2);
+}
+.mp-toolbar button.toggle:not(.is-on) {
+  opacity: 0.62;
+}
+.mp-toolbar button.toggle:not(.is-on) svg { opacity: 0.6; }
 
 .seat {
   display: grid;
