@@ -357,6 +357,7 @@ app.innerHTML = `
                 <span class="policy-badge" id="mp-advice-badge"></span>
               </div>
               <div class="advice-hero" id="mp-advice-hero"></div>
+              <div class="advice-coach" id="mp-advice-coach"></div>
               <div class="action-mix" id="mp-advice-mix"></div>
               <div class="metric-grid" id="mp-advice-metrics"></div>
               <div class="advice-note" id="mp-advice-note"></div>
@@ -1912,6 +1913,49 @@ function renderMpShowdownCards(state) {
     .join("");
 }
 
+// A plain-language coach note synthesized from data we TRUST — the GTO action plus
+// equity-vs-pot-odds and ahead/behind. Every branch states only facts; when a fact
+// would be false (e.g. equity actually beats the odds on a fold) it falls back to a
+// safe generic line rather than asserting something wrong. Teaches the WHY in-the-moment.
+function coachLine(top, advice, me, state) {
+  if (!top) return "";
+  const eq = Math.round((advice.equity || 0) * 100);
+  const odds = Math.round((advice.potOdds || 0) * 100);
+  const k = String(top.key || "").toLowerCase();
+  const isFold = k.includes("fold");
+  const isPassive = k.includes("call") || k.includes("check") || k.includes("limp");
+  const isAggro = !isFold && !isPassive; // bet / raise / jam
+  const preflop = !state?.board || state.board.length === 0;
+  const toCall = Number(me?.toCall) || 0;
+
+  if (preflop) {
+    const code = me?.hole?.length === 2 ? handCodeFromCards(me.hole) : "这手牌";
+    const ctx = CONTEXT_LABELS[me?.context] || "这个位置";
+    const act = isFold ? "弃牌" : isAggro ? "加注" : "跟注";
+    return `${code}(${me?.position || ""} ${ctx}):GTO 倾向「${act}」。`;
+  }
+  if (toCall > 0) {
+    if (isFold) {
+      return eq < odds
+        ? `权益 ${eq}% 低于跟注所需的底池赔率 ${odds}%,所以 GTO 弃牌。`
+        : `综合你的范围与位置,GTO 在这里倾向弃牌。`;
+    }
+    if (isPassive) {
+      return eq >= odds
+        ? `权益 ${eq}% 高于底池赔率 ${odds}%,跟注长期有利可图。`
+        : `用足够权益 + 后续牌力潜力跟注防守。`;
+    }
+    return eq >= 55
+      ? `你的权益领先(${eq}%),GTO 用加注向对手要价值。`
+      : `权益 ${eq}%,GTO 以加注施压、把弱牌打出底池(半诈唬)。`;
+  }
+  // no bet to face (open / checked-to)
+  if (isPassive) return `GTO 过牌:控制底池、保护你的过牌范围。`;
+  return eq >= 55
+    ? `你领先(权益 ${eq}%),GTO 下注获取价值、保护牌力。`
+    : `GTO 下注:以较低权益施压,迫使对手弃掉更好的牌(诈唬/半诈唬)。`;
+}
+
 function renderMpAdvice(state) {
   const advice = state?.me?.advice;
   const shell = $("#mp-advice");
@@ -1944,6 +1988,9 @@ function renderMpAdvice(state) {
     </div>
     <span class="advice-hero-tag">${mixed ? "混合策略" : "纯策略"}</span>
   `;
+  const coach = coachLine(top, advice, state?.me, state);
+  $("#mp-advice-coach").innerHTML = coach ? `<i data-lucide="message-square-text"></i><span>${escapeHtml(coach)}</span>` : "";
+  $("#mp-advice-coach").hidden = !coach;
   const version = advice.policySource?.version ? ` · ${advice.policySource.version.split("+")[0]}` : "";
   $("#mp-advice-note").textContent = `${badge.note}${version}`;
   $("#mp-advice-mix").innerHTML = sorted
