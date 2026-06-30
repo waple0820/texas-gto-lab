@@ -1895,15 +1895,23 @@ function renderMpShowdownCards(state) {
   const byId = Object.fromEntries(hands.map((h) => [h.id, h]));
   // winners first, then by hand strength order they were revealed
   const ordered = [...shownPlayers].sort((a, b) => (byId[b.id]?.won ? 1 : 0) - (byId[a.id]?.won ? 1 : 0));
+  const meId = state.me?.id;
   $("#mp-showdown-cards").innerHTML = ordered
     .map((player) => {
       const info = byId[player.id];
       const won = info?.won;
+      const isMe = player.id === meId;
+      // result chip — make the hero's own win/loss unmistakable at a glance
+      const chip = won
+        ? `<span class="show-win">${isMe ? "你赢了 " : ""}+${info.amount}bb</span>`
+        : isMe
+          ? `<span class="show-lose">本手未中</span>`
+          : "";
       return `
-        <div class="show-card-row${won ? " won" : ""}">
+        <div class="show-card-row${won ? " won" : ""}${isMe ? " is-me" : ""}">
           <div class="show-card-top">
-            <strong>${escapeHtml(player.name)}</strong>
-            ${won ? `<span class="show-win">+${info.amount}bb</span>` : ""}
+            <strong>${escapeHtml(player.name)}${isMe ? ` <span class="show-me">你</span>` : ""}</strong>
+            ${chip}
           </div>
           <div class="show-card-cards">${player.hole.map((card) => cardPip(card)).join("")}</div>
           ${info?.hand ? `<div class="show-card-hand">${escapeHtml(info.hand)}</div>` : ""}
