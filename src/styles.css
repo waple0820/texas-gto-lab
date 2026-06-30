@@ -3096,3 +3096,75 @@ button:focus-visible {
     grid-template-columns: 64px 38px 1fr;
   }
 }
+
+/* ---- First-run welcome overlay ---- */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(6, 9, 8, 0.72);
+  backdrop-filter: blur(8px);
+  animation: welcome-fade 0.25s ease;
+}
+.welcome-overlay[hidden] { display: none; }
+@keyframes welcome-fade { from { opacity: 0; } to { opacity: 1; } }
+.welcome-card {
+  width: min(540px, 100%);
+  padding: 28px 26px 24px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #141b18, #0f1513);
+  border: 1px solid rgba(125, 137, 130, 0.2);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(69, 192, 139, 0.06);
+  animation: welcome-rise 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes welcome-rise { from { transform: translateY(12px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.welcome-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--muted-2, #9aa6a0);
+  letter-spacing: 0.02em;
+}
+.welcome-title {
+  margin: 14px 0 8px;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.welcome-sub {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.welcome-sub strong { color: var(--green-2); }
+.welcome-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.welcome-mode {
+  display: grid;
+  gap: 3px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(125, 137, 130, 0.14);
+}
+.welcome-mode.hot { border-color: rgba(69, 192, 139, 0.4); background: rgba(69, 192, 139, 0.06); }
+.welcome-mode svg { width: 18px; height: 18px; color: var(--green-2); }
+.welcome-mode b { font-size: 13px; font-weight: 800; margin-top: 4px; }
+.welcome-mode span { font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+.welcome-cta { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.welcome-cta .primary-action { min-height: 46px; font-size: 15px; }
+@media (max-width: 560px) {
+  .welcome-modes { grid-template-columns: 1fr; }
+  .welcome-title { font-size: 20px; }
+  .welcome-cta { grid-template-columns: 1fr; }
+}
