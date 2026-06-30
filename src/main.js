@@ -1671,6 +1671,17 @@ function bindMpFeedTabs() {
   });
 }
 
+// Poker-tracker HUD per seat: VPIP / PFR / AF, tone-colored so you can read a
+// table at a glance (loose maniac vs tight nit). The bots' play is unchanged —
+// this is pure read-the-opponent telemetry, the GTO baseline stays untouched.
+function seatHudHtml(stats) {
+  if (!stats) return "";
+  const tone = stats.vpip >= 45 ? "loose" : stats.vpip <= 22 ? "tight" : "balanced";
+  return `<div class="seat-hud ${tone}" title="VPIP ${stats.vpip}% 主动入池 · PFR ${stats.pfr}% 翻前加注 · AF ${stats.af} 激进系数 · 样本 ${stats.hands} 手">
+    <span><i>V</i>${stats.vpip}</span><span><i>P</i>${stats.pfr}</span><span><i>AF</i>${stats.af}</span>
+  </div>`;
+}
+
 function renderMpSeats(state) {
   const players = state?.players || [];
   const slots = Array.from({ length: 6 }, (_, index) => players[index] || null);
@@ -1728,6 +1739,7 @@ function renderMpSeats(state) {
               <span class="stack">${round(player.stack, 1)}bb</span>
               <span>${player.connected || player.type === "ai" ? "在线" : "离线"}</span>
             </div>
+            ${seatHudHtml(player.stats)}
             <div class="mini-cards">${hole}</div>
             <div class="seat-tags">
               ${badges.map((badge) => `<span class="blind-tag">${badge}</span>`).join("")}

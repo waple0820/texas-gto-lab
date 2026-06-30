@@ -315,6 +315,10 @@ function makePlayer(name, type) {
     lastAction: null,
     personality: type === "ai" ? randomPersonality() : null,
     aiTemperature: type === "ai" ? round(0.96 + Math.random() * 0.18, 2) : null,
+    // Poker-tracker stats accumulated across hands (VPIP/PFR/aggression). Read-only
+    // telemetry — it never feeds the strategy engine, so the bots stay pure GTO.
+    stats: { hands: 0, vpip: 0, pfr: 0, aggr: 0, calls: 0 },
+    statHand: null,
   };
 }
 
@@ -392,6 +396,10 @@ function startHand(players) {
     player.hole = player.inHand ? [table.deck.pop(), table.deck.pop()] : [];
     player.review = [];
     player.lastAction = null;
+    if (player.inHand && player.stats) {
+      player.stats.hands += 1;
+      player.statHand = { vpip: false, pfr: false };
+    }
     if (player.type === "human") player.ready = false;
   }
 
@@ -686,7 +694,37 @@ function recordAction(player, type, label, amount) {
   player.lastAction = action;
   table.actions.push(action);
   table.lastEvent = `${player.name} ${label}${action.amount ? ` ${action.amount}bb` : ""}`;
+  accumulateStats(player, type);
   return action;
+}
+
+// Fold one action into the player's tracker stats. Blinds (type "blind") and
+// checks/folds are ignored for VPIP/PFR; aggression counts bets+raises vs calls.
+function accumulateStats(player, type) {
+  if (!player.stats) return;
+  if (type === "bet" || type === "raise" || type === "allin") player.stats.aggr += 1;
+  else if (type === "call") player.stats.calls += 1;
+  if (table.street === "preflop" && player.statHand) {
+    if (type === "call" || type === "raise" || type === "allin") {
+      if (!player.statHand.vpip) { player.statHand.vpip = true; player.stats.vpip += 1; }
+    }
+    if (type === "raise" || type === "allin") {
+      if (!player.statHand.pfr) { player.statHand.pfr = true; player.stats.pfr += 1; }
+    }
+  }
+}
+
+// Tracker-style snapshot for the seat HUD. Returns null until a couple of hands
+// of sample so we don't show wildly noisy early percentages.
+function statSnapshot(player) {
+  const s = player.stats;
+  if (!s || s.hands < 2) return null;
+  return {
+    hands: s.hands,
+    vpip: Math.round((s.vpip / s.hands) * 100),
+    pfr: Math.round((s.pfr / s.hands) * 100),
+    af: s.calls > 0 ? round(s.aggr / s.calls, 1) : s.aggr > 0 ? 9.9 : 0,
+  };
 }
 
 function buildReview(player, action) {
@@ -999,6 +1037,7 @@ function publicState(forPlayer = null) {
       allIn: player.allIn,
       streetBet: player.streetBet,
       lastAction: player.lastAction,
+      stats: statSnapshot(player),
       hole:
         player.id === forPlayer?.id
           ? player.hole
