@@ -242,6 +242,18 @@ function handleMessage(client, message) {
     broadcast();
     return;
   }
+  if (message.type === "quick_start") {
+    // One-click onboarding: seat GTO bots up to a 3-handed table, ready the human,
+    // and deal — so a first-time player is in a hand immediately, no setup steps.
+    const seated = () => table.players.filter((p) => p.type === "ai" || p.connected).length;
+    let guard = 0;
+    while (seated() < 3 && table.players.length < MAX_SEATS && guard++ < 8) addAiPlayer();
+    player.ready = true;
+    table.lastEvent = `${player.name} 快速开始`;
+    maybeStartHand();
+    broadcast();
+    return;
+  }
   if (message.type === "action") {
     handlePlayerAction(player, message.action);
     return;

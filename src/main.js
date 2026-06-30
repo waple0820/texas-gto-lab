@@ -59,6 +59,7 @@ const mpState = {
   reviewHandNumber: null,
   sessionReviews: [],
   sessionSeen: new Set(),
+  pendingQuickStart: false,
 };
 
 const PRACTICE_SPOTS = [
@@ -320,9 +321,11 @@ app.innerHTML = `
             </div>
             <div class="join-box" id="join-box">
               <label>用户名
-                <input id="mp-name" maxlength="18" autocomplete="off" placeholder="输入名字" />
+                <input id="mp-name" maxlength="18" autocomplete="off" placeholder="留空自动取名" />
               </label>
-              <button class="primary-action" id="mp-join"><i data-lucide="log-in"></i><span>入座开练</span></button>
+              <button class="primary-action" id="mp-quick"><i data-lucide="zap"></i><span>快速开始</span></button>
+              <button class="ghost-action" id="mp-join"><i data-lucide="log-in"></i><span>仅入座 · 自己配桌</span></button>
+              <p class="join-hint">一键坐下,自动配 3 个 GTO 电脑、立即发牌 —— 每个决策都有即时纠错。</p>
             </div>
             <div class="mp-toolbar">
               <button id="mp-ready">举手准备</button>
@@ -1341,6 +1344,10 @@ function wsUrl() {
   return `${protocol}//${location.host}/ws`;
 }
 
+function randomGuestName() {
+  return `牌手${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
 function connectMultiplayer(name) {
   if (mpState.ws) mpState.ws.close();
   mpState.name = name.trim();
@@ -1360,6 +1367,11 @@ function connectMultiplayer(name) {
     if (message.type === "state") {
       mpState.joined = true;
       mpState.state = message.state;
+      // Fire the queued one-click quick-start once we're seated and idle.
+      if (mpState.pendingQuickStart && message.state?.me && message.state.phase !== "playing") {
+        mpState.pendingQuickStart = false;
+        mpSend({ type: "quick_start" });
+      }
       renderMultiplayer();
     }
     if (message.type === "error") {
@@ -2318,12 +2330,19 @@ function wireEvents() {
   });
   $("#mp-name").value = mpState.name;
   $("#mp-join").addEventListener("click", () => {
-    const name = $("#mp-name").value.trim();
-    if (!name) {
-      $("#mp-status").textContent = "先输入用户名";
-      return;
-    }
+    const name = $("#mp-name").value.trim() || randomGuestName();
+    $("#mp-name").value = name;
     connectMultiplayer(name);
+  });
+  $("#mp-quick").addEventListener("click", () => {
+    const name = $("#mp-name").value.trim() || randomGuestName();
+    $("#mp-name").value = name;
+    if (mpState.connected && mpState.state?.me) {
+      mpSend({ type: "quick_start" });
+    } else {
+      mpState.pendingQuickStart = true;
+      connectMultiplayer(name);
+    }
   });
   $("#mp-name").addEventListener("keydown", (event) => {
     if (event.key === "Enter") $("#mp-join").click();
