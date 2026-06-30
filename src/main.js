@@ -2000,6 +2000,9 @@ function gtoFreqForButtons(advice, options) {
 
 function renderMpActions(state) {
   const options = state?.me?.actionOptions || [];
+  // has-actions drives the mobile sticky action bar (pinned to the bottom so you
+  // never have to scroll past the table to act on your turn).
+  $("#mp-actions").classList.toggle("has-actions", options.length > 0);
   if (!state?.me) {
     $("#mp-actions").innerHTML = `<div class="waiting">输入用户名后入座</div>`;
     return;
