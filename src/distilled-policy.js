@@ -1,5 +1,6 @@
 import { clamp, RANK_VALUE, cardRank } from "./poker-core.js";
 import { distilledPolicyArtifact } from "./distilled-policy-artifact.js";
+import { distillTemperature } from "./distill-calibration.js";
 
 // Runtime consumer for the GTO-distilled policy (unified open + facing model,
 // distill-river-v2). The network was trained on features computed by
@@ -114,7 +115,8 @@ function forward(values) {
     v = idx < layers.length - 1 ? out.map((x) => Math.max(0, x)) : out;
   });
   const max = Math.max(...v);
-  const exps = v.map((x) => Math.exp(x - max));
+  const temp = distillTemperature();
+  const exps = v.map((x) => Math.exp((x - max) / temp));
   const total = exps.reduce((s, x) => s + x, 0) || 1;
   return exps.map((x) => x / total);
 }
