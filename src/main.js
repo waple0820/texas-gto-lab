@@ -1400,9 +1400,11 @@ function renderMultiplayer() {
   hydrateIcons();
 }
 
-// Range matrix in the battle view — the iconic solver visualization. Shows the
-// hero's GTO range for the current position/context (frequency-weighted 13x13),
-// with the hero's actual hand highlighted: "this is your range, you're here".
+// Range matrix in the battle view — the iconic solver visualization. Colors every
+// hand by its GTO ACTION (raise=red / call=green / fold=grey split by frequency),
+// with the hero's hand ringed. Preflop reads the exact policy tables instantly;
+// postflop runs a client-side per-hand strategy sweep (cached per spot, lazy,
+// chunked so the UI stays responsive) to color the flop/turn/river range too.
 function renderMpRange(state) {
   const me = state?.me;
   const meta = $("#mp-range-meta");
@@ -1422,16 +1424,20 @@ function renderMpRange(state) {
   const heroCode = me.hole?.length === 2 ? handCodeFromCards(me.hole) : null;
   const coverage = me.position ? rangeCoverage(weights) : null;
   const ctxLabel = CONTEXT_LABELS[me.context] || me.context;
-  // Preflop: color each hand by its GTO ACTION (raise/call/fold split) — the
-  // signature solver view — from the exact preflop policy tables. Postflop: fall
-  // back to range presence (no per-hand postflop strategy available client-side).
   const preflop = !state.board || state.board.length === 0;
+  // Postflop strategy coloring is available only once the async sweep for THIS
+  // exact spot has finished (cached). Until then we show presence coloring.
+  const sig = preflop ? null : mpRangeSpotSig(state, me);
+  const postflopMix = !preflop && mpRangeStrat.sig === sig ? mpRangeStrat.mix : null;
+  const strategyMode = preflop || Boolean(postflopMix);
+  const computing = !preflop && !postflopMix && mpRangeStrat.computing === sig;
   meta.innerHTML = `<strong>${me.position} · ${escapeHtml(ctxLabel)}</strong>` +
     (coverage ? ` <span>${round(coverage.percent * 100, 1)}% · ${coverage.combos} combos</span>` : "") +
     (heroCode ? ` <em>你: ${heroCode}</em>` : "") +
-    (preflop
+    (strategyMode
       ? ` <span class="mp-range-legend"><i class="lg-raise"></i>加注 <i class="lg-call"></i>跟注 <i class="lg-fold"></i>弃牌</span>`
-      : "");
+      : "") +
+    (computing ? ` <span class="mp-range-loading">求解中…</span>` : "");
   const cells = [];
   for (let row = 0; row < RANKS.length; row += 1) {
     for (let col = 0; col < RANKS.length; col += 1) {
@@ -1439,14 +1445,9 @@ function renderMpRange(state) {
       const cellType = row === col ? "cell-pair" : row < col ? "cell-suited" : "cell-offsuit";
       const isHero = code === heroCode;
       if (preflop) {
-        const cat = preflopActionMix(code, me);
-        const rp = Math.round(cat.raise * 100);
-        const cp = Math.round((cat.raise + cat.call) * 100);
-        const grad = `linear-gradient(90deg, var(--red) 0 ${rp}%, var(--green-2) ${rp}% ${cp}%, rgba(120,130,124,0.18) ${cp}% 100%)`;
-        const empty = cat.raise + cat.call < 0.02;
-        cells.push(
-          `<div class="mp-range-cell strategy ${cellType} ${empty ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="background:${grad}" title="${code} — 加注${rp}% 跟注${cp - rp}% 弃牌${100 - cp}%"><span>${code}</span></div>`,
-        );
+        cells.push(strategyCellHtml(code, preflopActionMix(code, me), cellType, isHero));
+      } else if (postflopMix) {
+        cells.push(strategyCellHtml(code, postflopMix[code] || { raise: 0, call: 0, fold: 1 }, cellType, isHero));
       } else {
         const weight = Number(weights[code] || 0);
         cells.push(
@@ -1456,20 +1457,28 @@ function renderMpRange(state) {
     }
   }
   grid.innerHTML = cells.join("");
+  // Kick off the postflop strategy sweep lazily — only when the range tab is the
+  // one on screen (don't burn CPU solving a view nobody is looking at).
+  if (!preflop && !postflopMix && mpRangeTabActive()) {
+    startMpRangeSolve(state, me, sig, weights);
+  }
 }
 
-// Per-hand preflop GTO action mix (raise / call / fold fractions) from the exact
-// policy tables, for the strategy-colored range matrix.
-function preflopActionMix(handCode, me) {
-  const actions = preflopStrategyActions({
-    handCode,
-    position: me.position,
-    context: me.context,
-    tableSize: me.tableSize || 2,
-    stackBb: me.stackBb || 100,
-  });
+// One range cell colored by its action mix: raise(red) | call(green) | fold(grey)
+// as a horizontal frequency gradient — the GTO Wizard signature.
+function strategyCellHtml(code, mix, cellType, isHero) {
+  const rp = Math.round((mix.raise || 0) * 100);
+  const cp = Math.round(((mix.raise || 0) + (mix.call || 0)) * 100);
+  const grad = `linear-gradient(90deg, var(--red) 0 ${rp}%, var(--green-2) ${rp}% ${cp}%, rgba(120,130,124,0.18) ${cp}% 100%)`;
+  const empty = (mix.raise || 0) + (mix.call || 0) < 0.02;
+  return `<div class="mp-range-cell strategy ${cellType} ${empty ? "is-empty" : ""} ${isHero ? "is-hero" : ""}" style="background:${grad}" title="${code} — 加注${rp}% 跟注${cp - rp}% 弃牌${100 - cp}%"><span>${code}</span></div>`;
+}
+
+// Collapse a strategy's action list into raise/call/fold fractions for coloring.
+// Aggressive (bet/raise/jam/sizes) → raise; passive (call/check/limp) → call.
+function categorizeActionMix(actions) {
   const out = { raise: 0, call: 0, fold: 0 };
-  if (!actions) { out.fold = 1; return out; }
+  if (!actions || !actions.length) { out.fold = 1; return out; }
   for (const a of actions) {
     const k = String(a.key || "").toLowerCase();
     const f = a.frequency || 0;
@@ -1480,6 +1489,133 @@ function preflopActionMix(handCode, me) {
   const total = out.raise + out.call + out.fold || 1;
   out.raise /= total; out.call /= total; out.fold /= total;
   return out;
+}
+
+// Per-hand preflop GTO action mix from the exact policy tables.
+function preflopActionMix(handCode, me) {
+  return categorizeActionMix(
+    preflopStrategyActions({
+      handCode,
+      position: me.position,
+      context: me.context,
+      tableSize: me.tableSize || 2,
+      stackBb: me.stackBb || 100,
+    }),
+  );
+}
+
+// ---- Postflop strategy-range sweep (client-side, cached, chunked) ----
+// Cache holds the mix map for one spot; `computing` is the sig currently solving.
+const mpRangeStrat = { sig: null, mix: null, computing: null };
+
+// A spot fingerprint: same board/position/context/pot/toCall → reuse the solve.
+function mpRangeSpotSig(state, me) {
+  return [
+    me.position,
+    me.context,
+    (state.board || []).join(""),
+    Math.round(Number(state.pot) || 0),
+    Math.round(Number(me.toCall) || 0),
+    Math.round(Number(me.stackBb) || 0),
+  ].join("|");
+}
+
+function mpCurrentRangeSig() {
+  const s = mpState.state;
+  return s && s.me && s.me.position && s.me.context && s.board && s.board.length
+    ? mpRangeSpotSig(s, s.me)
+    : null;
+}
+
+function mpRangeTabActive() {
+  const tab = document.querySelector('.mp-feed-tab[data-feed="range"]');
+  return Boolean(tab && tab.classList.contains("is-active"));
+}
+
+// Pick a representative 2-card combo for a hand class, avoiding board cards.
+function representativeCombo(code, dead) {
+  const r1 = code[0];
+  const r2 = code[1];
+  const suited = code[2] === "s";
+  const pair = r1 === r2;
+  const suits = ["s", "h", "d", "c"];
+  if (pair || !suited) {
+    for (const a of suits) {
+      const c1 = r1 + a;
+      if (dead.has(c1)) continue;
+      for (const b of suits) {
+        if (b === a) continue;
+        const c2 = r2 + b;
+        if (dead.has(c2)) continue;
+        return [c1, c2];
+      }
+    }
+  } else {
+    for (const a of suits) {
+      const c1 = r1 + a;
+      const c2 = r2 + a;
+      if (dead.has(c1) || dead.has(c2)) continue;
+      return [c1, c2];
+    }
+  }
+  return null; // fully blocked by the board
+}
+
+function startMpRangeSolve(state, me, sig, weights) {
+  if (mpRangeStrat.computing === sig) return; // already solving this spot
+  mpRangeStrat.computing = sig;
+  // Re-render so the "求解中…" indicator appears, then solve in the background.
+  renderMpRange(state);
+  solveMpRangeStrategy(state, me, sig, weights);
+}
+
+// Sweep all 169 classes through recommendStrategy on the current board, in small
+// chunks with setTimeout yields so WebSocket updates and clicks keep flowing.
+// Aborts if the spot changes mid-solve; caches + re-renders on completion.
+async function solveMpRangeStrategy(state, me, sig, weights) {
+  const dead = new Set(state.board || []);
+  const pot = Number(state.pot) || 6;
+  const toCall = Number(me.toCall) || 0;
+  const codes = [];
+  for (let row = 0; row < RANKS.length; row += 1) {
+    for (let col = 0; col < RANKS.length; col += 1) codes.push(matrixCode(row, col));
+  }
+  const mix = {};
+  for (let i = 0; i < codes.length; i += 1) {
+    if (mpCurrentRangeSig() !== sig) {
+      if (mpRangeStrat.computing === sig) mpRangeStrat.computing = null;
+      return; // spot moved on — discard this solve
+    }
+    const code = codes[i];
+    const combo = representativeCombo(code, dead);
+    if (!combo) {
+      mix[code] = { raise: 0, call: 0, fold: 1 };
+    } else {
+      const rec = recommendStrategy({
+        hero: combo,
+        board: state.board,
+        position: me.position,
+        context: me.context,
+        tableSize: me.tableSize || 2,
+        stackBb: me.stackBb || 100,
+        pot,
+        toCall,
+        opponents: 1,
+        rangeWeights: weights,
+        iterations: 120,
+      });
+      mix[code] = categorizeActionMix(rec.actions);
+    }
+    if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0));
+  }
+  if (mpCurrentRangeSig() !== sig) {
+    if (mpRangeStrat.computing === sig) mpRangeStrat.computing = null;
+    return;
+  }
+  mpRangeStrat.sig = sig;
+  mpRangeStrat.mix = mix;
+  mpRangeStrat.computing = null;
+  if (mpState.state) renderMpRange(mpState.state);
 }
 
 // Keyboard shortcuts for the action buttons (F fold / C check-call / A all-in /
@@ -1515,6 +1651,8 @@ function bindMpFeedTabs() {
       const feed = tab.dataset.feed;
       $$(".mp-feed-tab").forEach((t) => t.classList.toggle("is-active", t.dataset.feed === feed));
       $$(".mp-feed-panel").forEach((p) => p.classList.toggle("is-active", p.dataset.feedPanel === feed));
+      // Opening the range tab triggers the postflop strategy solve on demand.
+      if (feed === "range" && mpState.state) renderMpRange(mpState.state);
     });
   });
 }
