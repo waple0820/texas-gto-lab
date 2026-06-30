@@ -30,6 +30,8 @@ const ACTION_LABELS = {
   "bet-over": { key: "bet-over", label: "超池", tone: "strong" },
   fold: { key: "fold", label: "弃牌", tone: "danger" },
   call: { key: "call", label: "跟注", tone: "neutral" },
+  "raise-small": { key: "raise-small", label: "小加注", tone: "accent" },
+  "raise-big": { key: "raise-big", label: "大加注", tone: "strong" },
   jam: { key: "jam", label: "全压", tone: "strong" },
 };
 
