@@ -2103,7 +2103,25 @@ function accumulateSessionReviews(state) {
     if (mpState.sessionSeen.has(key)) continue;
     mpState.sessionSeen.add(key);
     mpState.sessionReviews.push(r);
+    foldIntoLifetime(r);
   }
+}
+
+// Lifetime stats persisted in localStorage (no login) — so progress survives reloads
+// and the report can show a "this session vs your lifetime" trend (the retention hook).
+function loadLifetime() {
+  try {
+    const s = JSON.parse(localStorage.getItem("tgl-leak-stats"));
+    if (s && typeof s.decisions === "number") return s;
+  } catch { /* ignore */ }
+  return { decisions: 0, sumMatch: 0, leaks: 0 };
+}
+function foldIntoLifetime(r) {
+  const cum = mpState.lifetime || (mpState.lifetime = loadLifetime());
+  cum.decisions += 1;
+  cum.sumMatch += r.chosenFrequency || 0;
+  if ((r.chosenFrequency || 0) < 0.18 && (r.bestFrequency || 0) - (r.chosenFrequency || 0) > 0.12) cum.leaks += 1;
+  try { localStorage.setItem("tgl-leak-stats", JSON.stringify(cum)); } catch { /* ignore */ }
 }
 
 const STREET_LABEL = { preflop: "翻前", flop: "翻牌", turn: "转牌", river: "河牌" };
@@ -2116,6 +2134,24 @@ function renderMpReport(state) {
   if (!box) return;
   const rows = mpState.sessionReviews;
   if (rows.length < 4) {
+    // Returning player with saved history: greet them with their lifetime progress
+    // immediately (the retention payoff), instead of a cold "play a few hands" hint.
+    const cum = mpState.lifetime || loadLifetime();
+    if (cum && cum.decisions >= 8) {
+      const cumPct = Math.round((cum.sumMatch / cum.decisions) * 100);
+      const grade = cumPct >= 70 ? "good" : cumPct >= 50 ? "mix" : "leak";
+      box.innerHTML = `
+        <div class="mp-report-head"><span class="mp-report-title">你的练习进度</span><span class="mp-report-pro">PRO</span></div>
+        <div class="mp-report-score ${grade}">
+          <div class="mp-report-ring" style="--score:${cumPct}"><strong>${cumPct}</strong><em>GTO 吻合</em></div>
+          <div class="mp-report-kpis">
+            <div><b>${cum.decisions.toLocaleString()}</b><span>累计决策</span></div>
+            <div><b>${cum.leaks.toLocaleString()}</b><span>累计漏洞</span></div>
+          </div>
+        </div>
+        <div class="mp-report-empty">本节再打几手,生成新的漏洞报告并和累计对比。</div>`;
+      return;
+    }
     box.innerHTML = `<div class="mp-report-empty">打几手后这里会生成你的<strong>漏洞报告</strong>:GTO 吻合度、各街偏离、最大漏洞。</div>`;
     return;
   }
@@ -2171,7 +2207,24 @@ function renderMpReport(state) {
         <span class="leak-detail">你「${escapeHtml(r.chosenLabel || "-")}」(${Math.round((r.chosenFrequency || 0) * 100)}%) · GTO 倾向「${escapeHtml(r.bestLabel || "-")}」(${Math.round((r.bestFrequency || 0) * 100)}%)</span>
       </div>`).join("")}
     </div>` : `<div class="mp-report-clean">暂无明显漏洞,继续保持 👍</div>`}
+    ${lifetimeLine(score, rows.length)}
   `;
+}
+
+// Persistent lifetime line under the report — total decisions practiced + the
+// lifetime GTO-match average, with a this-session-vs-lifetime delta chip. Only shown
+// once there's history beyond the current session, so it reads as real progress.
+function lifetimeLine(sessionScore, sessionN) {
+  const cum = mpState.lifetime || loadLifetime();
+  if (!cum || cum.decisions < sessionN + 8) return "";
+  const cumPct = Math.round((cum.sumMatch / cum.decisions) * 100);
+  const delta = sessionScore - cumPct;
+  const dir = delta >= 0 ? "up" : "down";
+  const arrow = delta >= 0 ? "▲" : "▼";
+  return `<div class="mp-report-cum">
+    <span>累计 <b>${cum.decisions.toLocaleString()}</b> 决策 · 平均吻合 <b>${cumPct}%</b></span>
+    <span class="cum-delta ${dir}">本节 ${sessionScore}% ${arrow}${Math.abs(delta)}</span>
+  </div>`;
 }
 
 function renderMpReview(state) {
