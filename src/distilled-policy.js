@@ -115,7 +115,7 @@ function forward(values) {
     v = idx < layers.length - 1 ? out.map((x) => Math.max(0, x)) : out;
   });
   const max = Math.max(...v);
-  const temp = distillTemperature();
+  const temp = distillTemperature("river");
   const exps = v.map((x) => Math.exp((x - max) / temp));
   const total = exps.reduce((s, x) => s + x, 0) || 1;
   return exps.map((x) => x / total);
