@@ -1861,6 +1861,34 @@ button:focus-visible {
   font-weight: 900;
 }
 
+/* hero's own showdown row — instantly spot your hand + result */
+.show-card-row.is-me {
+  border-color: rgba(215, 168, 77, 0.55);
+  box-shadow: inset 3px 0 0 #d7a84d;
+}
+.show-card-row.is-me.won {
+  box-shadow: inset 3px 0 0 var(--green-2);
+}
+.show-me {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(215, 168, 77, 0.2);
+  color: #f4d996;
+  font-size: 10px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+.show-lose {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(120, 130, 124, 0.16);
+  color: var(--muted-2, #9aa6a0);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .show-card-cards {
   display: flex;
   gap: 5px;
