@@ -1403,6 +1403,27 @@ button:focus-visible {
 .mp-range-legend .lg-raise { background: var(--red); }
 .mp-range-legend .lg-call { background: var(--green-2); }
 .mp-range-legend .lg-fold { background: rgba(120, 130, 124, 0.5); }
+.mp-range-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--green-2);
+  font-variant-numeric: tabular-nums;
+}
+.mp-range-loading::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: mp-range-spin 0.7s linear infinite;
+}
+@keyframes mp-range-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .mp-range-loading::before { animation: none; }
+}
 .mp-range-cell.cell-offsuit { box-shadow: inset 2px 0 0 rgba(125, 137, 130, 0.45); }
 
 /* hero's actual hand — bright ring + lift so you instantly see where you are */
