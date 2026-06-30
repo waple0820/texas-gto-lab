@@ -1588,6 +1588,35 @@ button:focus-visible {
   letter-spacing: 0.02em;
 }
 
+/* Poker-tracker HUD chip per seat — VPIP / PFR / AF */
+.seat-hud {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+.seat-hud span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  background: rgba(120, 130, 124, 0.16);
+  color: var(--muted-2, #9aa6a0);
+}
+.seat-hud span i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 800;
+  opacity: 0.7;
+}
+.seat-hud.loose span { background: rgba(214, 92, 92, 0.18); color: #e98c8c; }
+.seat-hud.tight span { background: rgba(86, 142, 214, 0.16); color: #87b0e6; }
+.seat-hud.balanced span { background: rgba(69, 192, 139, 0.14); color: var(--green-2); }
+
 .mp-seat .mini-cards {
   justify-content: flex-start;
   gap: 6px;
