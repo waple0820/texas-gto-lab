@@ -57,6 +57,8 @@ const mpState = {
   name: localStorage.getItem("texas-gto-name") || "",
   reviewActorId: null,
   reviewHandNumber: null,
+  sessionReviews: [],
+  sessionSeen: new Set(),
 };
 
 const PRACTICE_SPOTS = [
@@ -360,6 +362,7 @@ app.innerHTML = `
                 <div class="mp-range-matrix" id="mp-range-matrix"></div>
               </div>
               <div class="mp-feed-panel" data-feed-panel="review">
+                <div class="mp-report" id="mp-report"></div>
                 <div class="review-tabs" id="mp-review-tabs" hidden></div>
                 <div class="review-list" id="mp-review-list"></div>
               </div>
@@ -1395,6 +1398,8 @@ function renderMultiplayer() {
   renderMpActions(state);
   renderMpActionLine(state);
   renderMpRange(state);
+  accumulateSessionReviews(state);
+  renderMpReport(state);
   renderMpReview(state);
   renderMpChat(state);
   hydrateIcons();
@@ -1999,6 +2004,87 @@ function renderMpFloatingActionLine(actions) {
       `,
     )
     .join("");
+}
+
+// Accumulate the hero's own per-decision reviews across the whole session, so we
+// can aggregate them into a leak report. Each decision is deduped by hand+order.
+function accumulateSessionReviews(state) {
+  const own = state?.me?.review || [];
+  for (const r of own) {
+    if (r.actorId && state?.me?.id && r.actorId !== state.me.id) continue;
+    const key = `${r.handNumber}:${r.actionOrder ?? r.street + r.chosenLabel}`;
+    if (mpState.sessionSeen.has(key)) continue;
+    mpState.sessionSeen.add(key);
+    mpState.sessionReviews.push(r);
+  }
+}
+
+const STREET_LABEL = { preflop: "翻前", flop: "翻牌", turn: "转牌", river: "河牌" };
+const STREET_ORDER = ["preflop", "flop", "turn", "river"];
+
+// Session leak report — the "find your leaks" hook. Aggregates the hero's decisions
+// into a GTO-match score, per-street deviation, and the biggest concrete leaks.
+function renderMpReport(state) {
+  const box = $("#mp-report");
+  if (!box) return;
+  const rows = mpState.sessionReviews;
+  if (rows.length < 4) {
+    box.innerHTML = `<div class="mp-report-empty">打几手后这里会生成你的<strong>漏洞报告</strong>:GTO 吻合度、各街偏离、最大漏洞。</div>`;
+    return;
+  }
+  const n = rows.length;
+  const matchAvg = rows.reduce((s, r) => s + (r.chosenFrequency || 0), 0) / n;
+  const leaks = rows.filter((r) => (r.chosenFrequency || 0) < 0.18 && (r.bestFrequency || 0) - (r.chosenFrequency || 0) > 0.12);
+  // per-street average GTO frequency (higher = closer to GTO)
+  const byStreet = STREET_ORDER.map((st) => {
+    const sr = rows.filter((r) => r.street === st);
+    return { st, n: sr.length, match: sr.length ? sr.reduce((s, r) => s + (r.chosenFrequency || 0), 0) / sr.length : null };
+  }).filter((x) => x.n > 0);
+  // Dedupe leaks by spot (street+hand+action) so we show distinct mistakes, worst first.
+  const leakBySpot = new Map();
+  for (const r of leaks) {
+    const key = `${r.street}:${r.handCode || ""}:${r.chosenLabel || ""}`;
+    const prev = leakBySpot.get(key);
+    if (!prev || (r.chosenFrequency || 0) < (prev.chosenFrequency || 0)) leakBySpot.set(key, r);
+  }
+  const topLeaks = [...leakBySpot.values()]
+    .sort((a, b) => (a.chosenFrequency || 0) - (b.chosenFrequency || 0))
+    .slice(0, 3);
+  const score = Math.round(matchAvg * 100);
+  const grade = score >= 70 ? "good" : score >= 50 ? "mix" : "leak";
+  const me = state?.players?.find((p) => p.id === state?.me?.id);
+  const stat = me?.stats;
+
+  box.innerHTML = `
+    <div class="mp-report-head">
+      <span class="mp-report-title">本节漏洞报告</span>
+      <span class="mp-report-pro">PRO</span>
+    </div>
+    <div class="mp-report-score ${grade}">
+      <div class="mp-report-ring" style="--score:${score}"><strong>${score}</strong><em>GTO 吻合</em></div>
+      <div class="mp-report-kpis">
+        <div><b>${n}</b><span>决策</span></div>
+        <div><b>${leaks.length}</b><span>漏洞</span></div>
+        ${stat ? `<div><b>${stat.vpip}/${stat.pfr}</b><span>VPIP/PFR</span></div>` : ""}
+      </div>
+    </div>
+    <div class="mp-report-streets">
+      ${byStreet.map((s) => {
+        const pct = Math.round((s.match || 0) * 100);
+        const tone = pct >= 70 ? "good" : pct >= 50 ? "mix" : "leak";
+        return `<div class="mp-report-street"><span>${STREET_LABEL[s.st] || s.st}</span>
+          <div class="mp-report-bar"><i class="${tone}" style="width:${pct}%"></i></div>
+          <em>${pct}%</em></div>`;
+      }).join("")}
+    </div>
+    ${topLeaks.length ? `<div class="mp-report-leaks">
+      <div class="mp-report-leaks-h">最大漏洞</div>
+      ${topLeaks.map((r) => `<div class="mp-report-leak">
+        <span class="leak-spot">${STREET_LABEL[r.street] || r.street}${r.handCode ? ` · ${r.handCode}` : ""}</span>
+        <span class="leak-detail">你「${escapeHtml(r.chosenLabel || "-")}」(${Math.round((r.chosenFrequency || 0) * 100)}%) · GTO 倾向「${escapeHtml(r.bestLabel || "-")}」(${Math.round((r.bestFrequency || 0) * 100)}%)</span>
+      </div>`).join("")}
+    </div>` : `<div class="mp-report-clean">暂无明显漏洞,继续保持 👍</div>`}
+  `;
 }
 
 function renderMpReview(state) {

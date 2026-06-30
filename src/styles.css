@@ -2446,6 +2446,90 @@ button:focus-visible {
   padding-right: 4px;
 }
 
+/* Session leak report — the "find your leaks" hook (Pro showcase) */
+.mp-report {
+  margin-bottom: 12px;
+}
+.mp-report-empty {
+  padding: 14px 12px;
+  border: 1px dashed rgba(125, 137, 130, 0.3);
+  border-radius: var(--radius-lg, 14px);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mp-report-empty strong { color: var(--green-2); }
+.mp-report {
+  --report-accent: var(--green-2);
+}
+.mp-report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.mp-report-title { font-size: 13px; font-weight: 900; letter-spacing: 0.02em; }
+.mp-report-pro {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #1a1410;
+  background: linear-gradient(135deg, #f4d996, #d7a84d);
+}
+.mp-report-score {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: var(--radius-lg, 14px);
+  background: rgba(18, 24, 21, 0.6);
+  border: 1px solid rgba(125, 137, 130, 0.16);
+}
+.mp-report-ring {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  flex: none;
+  background:
+    radial-gradient(closest-side, var(--panel, #12181a) 78%, transparent 79%),
+    conic-gradient(var(--report-accent) calc(var(--score, 0) * 1%), rgba(120, 130, 124, 0.18) 0);
+}
+.mp-report-score.good { --report-accent: var(--green-2); }
+.mp-report-score.mix { --report-accent: #e9c46a; }
+.mp-report-score.leak { --report-accent: var(--red); }
+.mp-report-ring strong { font-size: 20px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+.mp-report-ring em { font-size: 8px; color: var(--muted); font-style: normal; }
+.mp-report-kpis { display: flex; gap: 16px; }
+.mp-report-kpis div { display: grid; }
+.mp-report-kpis b { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.mp-report-kpis span { font-size: 10px; color: var(--muted); }
+.mp-report-streets { display: grid; gap: 6px; margin-top: 10px; }
+.mp-report-street { display: grid; grid-template-columns: 36px 1fr 34px; align-items: center; gap: 8px; font-size: 11px; }
+.mp-report-street span { color: var(--muted); }
+.mp-report-street em { text-align: right; font-style: normal; font-variant-numeric: tabular-nums; font-weight: 800; }
+.mp-report-bar { height: 7px; border-radius: 999px; background: rgba(120, 130, 124, 0.14); overflow: hidden; }
+.mp-report-bar i { display: block; height: 100%; border-radius: 999px; }
+.mp-report-bar i.good { background: var(--green-2); }
+.mp-report-bar i.mix { background: #e9c46a; }
+.mp-report-bar i.leak { background: var(--red); }
+.mp-report-leaks { margin-top: 10px; display: grid; gap: 6px; }
+.mp-report-leaks-h { font-size: 11px; font-weight: 800; color: var(--muted-2, #9aa6a0); }
+.mp-report-leak {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: rgba(214, 92, 92, 0.08);
+  border-left: 2px solid var(--red);
+}
+.leak-spot { font-size: 11px; font-weight: 800; }
+.leak-detail { font-size: 11px; color: var(--muted); }
+.mp-report-clean { margin-top: 8px; font-size: 11px; color: var(--green-2); }
+
 .review-tabs {
   display: flex;
   gap: 6px;
