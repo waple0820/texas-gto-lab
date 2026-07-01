@@ -118,6 +118,7 @@ let nextAiIndex = 1;
 let nextChatId = 1;
 const clients = new Map();
 const pendingAiTimers = new Set();
+let nextHandTimer = null;
 
 const table = {
   phase: "waiting",
@@ -236,6 +237,13 @@ function handleMessage(client, message) {
     broadcast();
     return;
   }
+  if (message.type === "leave") {
+    leavePlayer(player);
+    client.playerId = null;
+    send(client.ws, { type: "state", state: publicState(null) });
+    broadcast();
+    return;
+  }
   if (message.type === "add_ai") {
     addAiPlayer();
     maybeStartHand();
@@ -350,9 +358,33 @@ function removePlayer(player) {
   table.players = table.players.filter((seat) => seat.id !== player.id);
 }
 
+function leavePlayer(player) {
+  if (!player) return;
+  if (table.phase === "playing" && player.inHand && !player.folded && !player.allIn) {
+    player.folded = true;
+    table.acted.add(player.id);
+    recordAction(player, "fold", "离桌弃牌", 0);
+    table.lastEvent = `${player.name} 离桌`;
+    advanceTurnOrStreet(player);
+    removePlayer(player);
+    if (table.phase !== "playing") {
+      pruneIdleTable();
+      scheduleNextHand();
+    }
+  } else {
+    removePlayer(player);
+    table.lastEvent = `${player.name} 离桌`;
+    pruneIdleTable();
+    maybeStartHand();
+  }
+  player.socket = null;
+  player.connected = false;
+}
+
 function pruneIdleTable() {
   const hasOnlineHuman = table.players.some((player) => player.type === "human" && player.connected);
   if (!hasOnlineHuman && table.phase !== "playing") {
+    clearNextHandTimer();
     table.players = [];
     table.phase = "waiting";
     table.street = "waiting";
@@ -372,6 +404,7 @@ function pruneIdleTable() {
 
 function maybeStartHand() {
   if (!["waiting", "showdown"].includes(table.phase)) return;
+  clearNextHandTimer();
   const candidates = table.players.filter((player) => canJoinNextHand(player));
   const humanCandidates = candidates.filter((player) => player.type === "human");
   if (candidates.length < 2) return;
@@ -386,6 +419,7 @@ function canJoinNextHand(player) {
 
 function startHand(players) {
   clearAiTimers();
+  clearNextHandTimer();
   table.phase = "playing";
   table.handNumber += 1;
   table.deck = shuffle(makeDeck());
@@ -413,7 +447,6 @@ function startHand(players) {
       player.stats.hands += 1;
       player.statHand = { vpip: false, pfr: false };
     }
-    if (player.type === "human") player.ready = false;
   }
 
   const active = activePlayers();
@@ -517,7 +550,12 @@ function applyAction(player, action) {
   if (aggressive) {
     const explicitSize = actionSize(action);
     const size = aggressive === "allin" ? player.stack + toCall : explicitSize || Math.max(BIG_BLIND, table.pot * aggressive);
-    const target = id === "allin" ? player.streetBet + player.stack : table.currentBet + size;
+    const target =
+      id === "allin"
+        ? player.streetBet + player.stack
+        : explicitSize && table.street === "preflop"
+          ? Math.max(table.currentBet, explicitSize)
+          : table.currentBet + size;
     const paid = commit(player, Math.max(0, target - player.streetBet));
     table.currentBet = Math.max(table.currentBet, player.streetBet);
     table.acted = new Set([player.id]);
@@ -587,6 +625,7 @@ function advanceTurnOrStreet(lastPlayer) {
     advanceStreet();
     return;
   }
+  if (table.turnId !== lastPlayer.id && actors.some((player) => player.id === table.turnId)) return;
   table.turnId = nextActorAfter(lastPlayer.id);
 }
 
@@ -674,10 +713,21 @@ function endHand() {
   table.street = "showdown";
   table.turnId = null;
   table.pot = 0;
-  for (const player of table.players) {
-    if (player.type === "human") player.ready = false;
-  }
   pruneIdleTable();
+  scheduleNextHand();
+}
+
+function scheduleNextHand() {
+  clearNextHandTimer();
+  if (table.phase !== "showdown") return;
+  const candidates = table.players.filter((player) => canJoinNextHand(player));
+  const humanCandidates = candidates.filter((player) => player.type === "human");
+  if (candidates.length < 2 || humanCandidates.some((player) => !player.ready)) return;
+  nextHandTimer = setTimeout(() => {
+    nextHandTimer = null;
+    maybeStartHand();
+    broadcast();
+  }, 2200);
 }
 
 function foldDisconnectedPlayer(player) {
@@ -1017,6 +1067,12 @@ function clearAiTimers() {
   pendingAiTimers.clear();
 }
 
+function clearNextHandTimer() {
+  if (!nextHandTimer) return;
+  clearTimeout(nextHandTimer);
+  nextHandTimer = null;
+}
+
 function publicState(forPlayer = null) {
   return {
     phase: table.phase,
@@ -1110,26 +1166,94 @@ function adviceFor(player) {
 function actionOptionsFor(player) {
   if (!player || table.phase !== "playing" || table.turnId !== player.id || player.folded || player.allIn) return [];
   const toCall = toCallFor(player);
-  const noCallPreflop = toCall <= 0 && table.street === "preflop";
-  const noCallPostflop = toCall <= 0 && table.street !== "preflop";
-  if (noCallPostflop) {
-    return [
-      { id: "check-call", label: "过牌" },
-      { id: "third", label: "1/3 pot" },
-      { id: "half", label: "1/2 pot" },
-      { id: "two-thirds", label: "2/3 pot" },
-      { id: "pot", label: "Pot" },
-      { id: "overbet", label: "Overbet" },
-      { id: "allin", label: "All-in" },
-    ];
+  const options = [];
+  if (toCall > 0) options.push({ id: "fold", label: "弃牌", gtoKeys: ["fold"], action: "fold" });
+  options.push({
+    id: "check-call",
+    label: toCall > 0 ? "跟注" : "过牌",
+    amount: toCall > 0 ? toCall : 0,
+    gtoKeys: [toCall > 0 ? "call" : "check"],
+    action: "check-call",
+  });
+
+  const recommendation = recommendFor(player);
+  const sizingOptions = standardSizingOptions(recommendation.sizing?.options || [], table.street, toCall);
+  for (const option of sizingOptions) {
+    options.push(sizeButtonOption(option, toCall, table.street));
   }
-  return [
-    ...(toCall > 0 ? [{ id: "fold", label: "弃牌" }] : []),
-    { id: "check-call", label: toCall > 0 ? `跟注 ${toCall}bb` : "过牌" },
-    { id: "half", label: toCall > 0 || noCallPreflop ? "小加注" : "半池" },
-    { id: "pot", label: toCall > 0 || noCallPreflop ? "大加注" : "满池" },
-    { id: "allin", label: "All-in" },
-  ];
+
+  options.push({
+    id: "allin",
+    label: "All-in",
+    amount: round(player.stack + toCall, 1),
+    gtoKeys: ["jam", "bet-over", "raise-big"],
+    action: "allin",
+  });
+  return dedupeActionOptions(options);
+}
+
+function standardSizingOptions(options, street, toCall) {
+  const seen = new Set();
+  const filtered = [];
+  for (const option of options) {
+    if (!Number.isFinite(Number(option?.amount)) || option.amount <= 0) continue;
+    const label = String(option.label || "");
+    if (!label || label.toLowerCase().includes("all-in")) continue;
+    const key = `${label}:${round(option.amount, 1)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    filtered.push(option);
+  }
+  const limit = street === "preflop" ? 4 : toCall > 0 ? 4 : 6;
+  return filtered.slice(0, limit);
+}
+
+function sizeButtonOption(option, toCall, street) {
+  const fraction = Number(option.fraction || 0);
+  const id = actionIdForSizing(fraction);
+  const amount = round(option.amount || 0, 1);
+  const gtoKeys =
+    street === "preflop"
+      ? ["raise"]
+      : toCall > 0
+      ? fraction > 1.05
+        ? ["raise-big", "jam"]
+        : fraction > 0.7
+          ? ["raise-big"]
+          : ["raise-small", "raise"]
+      : fraction > 1.05
+        ? ["bet-over"]
+        : fraction > 0.7
+          ? ["bet-big"]
+          : fraction > 0.35
+            ? ["bet-mid"]
+            : ["bet-small"];
+  return {
+    id: `size-${amount}`,
+    label: option.label || `${amount}bb`,
+    amount,
+    recommended: Boolean(option.recommended),
+    gtoKeys,
+    action: { id, size: amount, label: option.label || "下注" },
+  };
+}
+
+function actionIdForSizing(fraction) {
+  if (fraction > 1.05) return "overbet";
+  if (fraction > 0.72) return "pot";
+  if (fraction > 0.58) return "two-thirds";
+  if (fraction > 0.38) return "half";
+  return "third";
+}
+
+function dedupeActionOptions(options) {
+  const seen = new Set();
+  return options.filter((option) => {
+    const key = `${option.id}:${option.amount ?? ""}:${option.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function broadcast() {
