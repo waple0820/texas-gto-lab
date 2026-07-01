@@ -379,6 +379,7 @@ function leavePlayer(player) {
   }
   player.socket = null;
   player.connected = false;
+  queueAiIfNeeded();
 }
 
 function pruneIdleTable() {
@@ -735,6 +736,7 @@ function foldDisconnectedPlayer(player) {
   table.acted.add(player.id);
   recordAction(player, "fold", "离线弃牌", 0);
   advanceTurnOrStreet(player);
+  queueAiIfNeeded();
 }
 
 function activePlayers() {

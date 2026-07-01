@@ -62,6 +62,7 @@ const mpState = {
   pendingQuickStart: false,
   autoContinue: true,
   autoReadyTimer: null,
+  connectSeq: 0,
 };
 
 const PRACTICE_SPOTS = [
@@ -1423,20 +1424,33 @@ function setupWelcome() {
 }
 
 function connectMultiplayer(name) {
-  if (mpState.ws) mpState.ws.close();
+  if (mpState.ws) {
+    mpState.ws.onopen = null;
+    mpState.ws.onmessage = null;
+    mpState.ws.onclose = null;
+    mpState.ws.onerror = null;
+    mpState.ws.close();
+  }
   mpState.name = name.trim();
   localStorage.setItem("texas-gto-name", mpState.name);
-  mpState.ws = new WebSocket(wsUrl());
+  const seq = (mpState.connectSeq += 1);
+  const ws = new WebSocket(wsUrl());
+  mpState.ws = ws;
   mpState.connected = false;
   mpState.joined = false;
+  mpState.state = null;
   renderMultiplayer();
 
-  mpState.ws.onopen = () => {
+  const isCurrent = () => mpState.ws === ws && mpState.connectSeq === seq;
+
+  ws.onopen = () => {
+    if (!isCurrent()) return;
     mpState.connected = true;
     mpSend({ type: "join", name: mpState.name });
     renderMultiplayer();
   };
-  mpState.ws.onmessage = (event) => {
+  ws.onmessage = (event) => {
+    if (!isCurrent()) return;
     const message = JSON.parse(event.data);
     if (message.type === "state") {
       mpState.joined = true;
@@ -1452,11 +1466,14 @@ function connectMultiplayer(name) {
       $("#mp-status").textContent = message.message;
     }
   };
-  mpState.ws.onclose = () => {
+  ws.onclose = () => {
+    if (!isCurrent()) return;
     mpState.connected = false;
+    mpState.joined = false;
     renderMultiplayer();
   };
-  mpState.ws.onerror = () => {
+  ws.onerror = () => {
+    if (!isCurrent()) return;
     $("#mp-status").textContent = "连接失败";
   };
 }
@@ -2547,7 +2564,7 @@ function wireEvents() {
   $("#mp-quick").addEventListener("click", () => {
     const name = $("#mp-name").value.trim() || randomGuestName();
     $("#mp-name").value = name;
-    if (mpState.connected && mpState.state?.me) {
+    if (mpState.ws?.readyState === WebSocket.OPEN && mpState.state?.me) {
       mpSend({ type: "quick_start" });
     } else {
       mpState.pendingQuickStart = true;
