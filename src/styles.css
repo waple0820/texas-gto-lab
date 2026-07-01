@@ -1110,8 +1110,8 @@ button:focus-visible {
 .mp-seat-shell {
   display: grid;
   align-content: start;
-  gap: 7px;
-  padding: 11px 12px;
+  gap: 5px;
+  padding: 9px 11px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   background:
@@ -1135,13 +1135,13 @@ button:focus-visible {
 }
 
 .mp-seat-1 {
-  top: 188px;
+  top: 176px;
   right: 26px;
 }
 
 .mp-seat-2 {
   right: 40px;
-  bottom: 84px;
+  bottom: 76px;
 }
 
 .mp-seat-3 {
@@ -1152,11 +1152,11 @@ button:focus-visible {
 
 .mp-seat-4 {
   left: 40px;
-  bottom: 84px;
+  bottom: 76px;
 }
 
 .mp-seat-5 {
-  top: 188px;
+  top: 176px;
   left: 26px;
 }
 
@@ -1645,10 +1645,10 @@ button:focus-visible {
 }
 
 .mp-seat .mini-card {
-  width: 34px;
-  height: 47px;
+  width: 30px;
+  height: 42px;
   border-radius: 5px;
-  font-size: 14px;
+  font-size: 13px;
   box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
 }
 
@@ -2293,13 +2293,13 @@ button:focus-visible {
 }
 
 .last-action {
-  min-height: 26px;
-  padding: 5px 10px;
+  min-height: 20px;
+  padding: 4px 9px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.18);
   color: #dce9e1;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
