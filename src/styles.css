@@ -1146,7 +1146,7 @@ button:focus-visible {
 
 .mp-seat-3 {
   left: 50%;
-  bottom: 20px;
+  bottom: 116px;
   transform: translateX(-50%);
 }
 
@@ -1939,6 +1939,65 @@ button:focus-visible {
   backdrop-filter: blur(14px);
 }
 
+.mp-hero-hand {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-width: 188px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.mp-hero-hand[hidden] {
+  display: none;
+}
+
+.mp-hero-cards {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+}
+
+.mp-hero-hand .mini-card {
+  width: 52px;
+  height: 72px;
+  border-radius: 8px;
+  font-size: 20px;
+  box-shadow: 0 16px 26px rgba(0, 0, 0, 0.34);
+}
+
+.mp-hero-hand-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 4px 11px;
+  border: 1px solid rgba(215, 168, 77, 0.32);
+  border-radius: 999px;
+  background: rgba(8, 13, 11, 0.82);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28);
+}
+
+.mp-hero-hand-meta strong {
+  overflow: hidden;
+  color: #f4d996;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-hero-hand-meta span {
+  flex: none;
+  color: var(--green-2);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .mp-floating-head {
   display: flex;
   align-items: center;
@@ -2185,7 +2244,7 @@ button:focus-visible {
 
 .mp-toolbar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2310,6 +2369,7 @@ button:focus-visible {
 .sim-actions button {
   position: relative;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -2321,6 +2381,19 @@ button:focus-visible {
 }
 
 .sim-actions button svg { width: 15px; height: 15px; opacity: 0.85; }
+
+.sim-actions button small {
+  flex-basis: 100%;
+  margin-top: -3px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sim-actions button.is-size-primary small {
+  color: #f8e2a6;
+}
 
 /* subtle keyboard-shortcut hint in the button corner */
 .act-key {
@@ -3157,10 +3230,18 @@ button:focus-visible {
 
   .mp-floating-action {
     position: static;
-    order: 3;
+    order: 4;
     width: 100%;
     max-height: none;
     padding: 10px;
+  }
+
+  .mp-hero-hand {
+    position: static;
+    order: 3;
+    width: 100%;
+    max-width: none;
+    transform: none;
   }
 
   .mp-table-action-line {

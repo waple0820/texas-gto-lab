@@ -329,6 +329,7 @@ app.innerHTML = `
                 </div>
                 <div class="mp-table-action-line" id="mp-table-action-line"></div>
               </div>
+              <div class="mp-hero-hand" id="mp-hero-hand"></div>
             </div>
           </section>
 
@@ -347,6 +348,7 @@ app.innerHTML = `
             </div>
             <div class="mp-toolbar">
               <button id="mp-ready">举手准备</button>
+              <button id="mp-leave">离桌</button>
               <button id="mp-add-ai">添加电脑</button>
               <button id="mp-autocontinue" class="toggle is-on"><i data-lucide="repeat"></i><span>自动下一手</span></button>
               <button id="mp-copy-link">复制邀请链接</button>
@@ -1470,14 +1472,16 @@ function renderMultiplayer() {
   $("#mp-name").value = mpState.name;
   $("#mp-status").textContent = mpState.connected ? (state ? `${state.streetLabel} · Hand ${state.handNumber}` : "已连接") : "未连接";
   $("#join-box").hidden = Boolean(state?.me);
-  $("#mp-ready").disabled = !state?.me || state.phase === "playing" || state.me.ready;
-  $("#mp-ready").textContent = state?.me?.ready ? "已举手" : "举手准备";
+  $("#mp-ready").disabled = !state?.me || state.me.ready;
+  $("#mp-ready").textContent = state?.me?.ready ? "已准备" : "准备";
+  $("#mp-leave").disabled = !state?.me;
   $("#mp-add-ai").disabled = !state?.me || !state.canAddAi;
 
   bindMpFeedTabs();
   setupMpHotkeys();
   renderMpSeats(state);
   renderMpCenter(state);
+  renderMpHeroHand(state);
   renderMpAdvice(state);
   renderMpActions(state);
   renderMpActionLine(state);
@@ -1870,9 +1874,28 @@ function renderMpReadyBoard(state) {
         </div>
       `
     : "";
-  $("#mp-table-ready").hidden = !state?.me || state.phase === "playing";
-  $("#mp-table-ready").disabled = !state?.me || state.phase === "playing" || state.me.ready;
-  $("#mp-table-ready").textContent = state?.me?.ready ? "已举手" : "举手准备";
+  $("#mp-table-ready").hidden = !state?.me || state.me.ready;
+  $("#mp-table-ready").disabled = !state?.me || state.me.ready;
+  $("#mp-table-ready").textContent = state?.me?.ready ? "已准备" : "准备";
+}
+
+function renderMpHeroHand(state) {
+  const me = state?.me;
+  const shell = $("#mp-hero-hand");
+  if (!me) {
+    shell.innerHTML = "";
+    shell.hidden = true;
+    return;
+  }
+  shell.hidden = false;
+  const cards = me.hole?.length ? me.hole.map((card) => cardPip(card)).join("") : [cardPip(null, true), cardPip(null, true)].join("");
+  shell.innerHTML = `
+    <div class="mp-hero-cards">${cards}</div>
+    <div class="mp-hero-hand-meta">
+      <strong>${escapeHtml(me.name || "Hero")}</strong>
+      <span>${me.hole?.length === 2 ? handCodeFromCards(me.hole) : "等待发牌"}</span>
+    </div>
+  `;
 }
 
 function renderMpShowdownCards(state) {
@@ -2042,12 +2065,15 @@ const ACTION_TO_BUTTON = {
 const BUTTON_ICON = { "act-fold": "x", "act-call": "check", "act-bet": "coins", "act-allin": "flame" };
 
 function gtoFreqForButtons(advice, options) {
-  const ids = new Set(options.map((o) => o.id));
   const freq = {};
   if (!advice?.actions) return freq;
   for (const action of advice.actions) {
     const cands = ACTION_TO_BUTTON[action.key] || [];
-    const target = cands.find((id) => ids.has(id)) || (ids.has("check-call") && (action.key === "check" || action.key === "call") ? "check-call" : null);
+    const targetOption =
+      options.find((option) => option.gtoKeys?.includes(action.key)) ||
+      options.find((option) => cands.includes(option.id)) ||
+      options.find((option) => option.id === "check-call" && (action.key === "check" || action.key === "call"));
+    const target = targetOption?.id;
     if (target) freq[target] = (freq[target] || 0) + (action.frequency || 0);
   }
   return freq;
@@ -2068,15 +2094,16 @@ function renderMpActions(state) {
     const bestFreq = bestId ? gto[bestId] : 0;
     let sizeDigit = 0; // 1..n for the bet/raise sizing buttons, in order
     $("#mp-actions").innerHTML = options
-      .map((option) => {
+      .map((option, index) => {
         const tone = actionTone(option.id);
         const f = gto[option.id] || 0;
         const isGto = option.id === bestId && bestFreq > 0;
         const badge = f > 0 ? `<em class="act-freq">${pct(f, 0)}</em>` : "";
         // hotkey: F fold / C check-call / A all-in / digits for sizings
         const key = tone === "act-fold" ? "f" : tone === "act-call" ? "c" : tone === "act-allin" ? "a" : String(++sizeDigit);
-        return `<button class="${tone} ${isGto ? "is-gto" : ""}" data-mp-action="${option.id}" data-key="${key}">
-          <kbd class="act-key">${key.toUpperCase()}</kbd><i data-lucide="${BUTTON_ICON[tone] || "circle"}"></i><span>${escapeHtml(option.label)}</span>${badge}
+        const amount = Number.isFinite(Number(option.amount)) && option.amount > 0 ? `<small>${round(option.amount, 1)}bb</small>` : "";
+        return `<button class="${tone} ${isGto ? "is-gto" : ""} ${option.recommended ? "is-size-primary" : ""}" data-mp-action-index="${index}" data-key="${key}">
+          <kbd class="act-key">${key.toUpperCase()}</kbd><i data-lucide="${BUTTON_ICON[tone] || "circle"}"></i><span>${escapeHtml(option.label)}</span>${amount}${badge}
         </button>`;
       })
       .join("");
@@ -2086,7 +2113,10 @@ function renderMpActions(state) {
     $("#mp-actions").innerHTML = `<div class="waiting">准备后自动开下一把</div>`;
   }
   $$("#mp-actions button").forEach((button) => {
-    button.addEventListener("click", () => mpSend({ type: "action", action: button.dataset.mpAction }));
+    button.addEventListener("click", () => {
+      const option = options[Number(button.dataset.mpActionIndex)];
+      mpSend({ type: "action", action: option?.action ?? option?.id });
+    });
   });
 }
 
@@ -2529,6 +2559,7 @@ function wireEvents() {
   });
   $("#mp-ready").addEventListener("click", () => mpSend({ type: "ready" }));
   $("#mp-table-ready").addEventListener("click", () => mpSend({ type: "ready" }));
+  $("#mp-leave").addEventListener("click", () => mpSend({ type: "leave" }));
   $("#mp-add-ai").addEventListener("click", () => mpSend({ type: "add_ai" }));
   $("#mp-autocontinue").addEventListener("click", () => {
     mpState.autoContinue = !mpState.autoContinue;
