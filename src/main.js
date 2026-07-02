@@ -330,7 +330,6 @@ app.innerHTML = `
                 </div>
                 <div class="mp-table-action-line" id="mp-table-action-line"></div>
               </div>
-              <div class="mp-hero-hand" id="mp-hero-hand"></div>
             </div>
           </section>
 
@@ -1498,7 +1497,6 @@ function renderMultiplayer() {
   setupMpHotkeys();
   renderMpSeats(state);
   renderMpCenter(state);
-  renderMpHeroHand(state);
   renderMpAdvice(state);
   renderMpActions(state);
   renderMpActionLine(state);
@@ -1894,25 +1892,6 @@ function renderMpReadyBoard(state) {
   $("#mp-table-ready").hidden = !state?.me || state.me.ready;
   $("#mp-table-ready").disabled = !state?.me || state.me.ready;
   $("#mp-table-ready").textContent = state?.me?.ready ? "已准备" : "准备";
-}
-
-function renderMpHeroHand(state) {
-  const me = state?.me;
-  const shell = $("#mp-hero-hand");
-  if (!me) {
-    shell.innerHTML = "";
-    shell.hidden = true;
-    return;
-  }
-  shell.hidden = false;
-  const cards = me.hole?.length ? me.hole.map((card) => cardPip(card)).join("") : [cardPip(null, true), cardPip(null, true)].join("");
-  shell.innerHTML = `
-    <div class="mp-hero-cards">${cards}</div>
-    <div class="mp-hero-hand-meta">
-      <strong>${escapeHtml(me.name || "Hero")}</strong>
-      <span>${me.hole?.length === 2 ? handCodeFromCards(me.hole) : "等待发牌"}</span>
-    </div>
-  `;
 }
 
 function renderMpShowdownCards(state) {
