@@ -326,6 +326,25 @@ function commonPostflopSizes(pot, spr, boardCards) {
   return options;
 }
 
+function raiseSizeOption(label, amount, role, frequency = null, raiseSize = "small") {
+  return {
+    ...sizeOption(label, amount, role, frequency),
+    raiseSize,
+  };
+}
+
+function postflopRaiseSizes(metrics) {
+  const currentBet = Math.max(metrics.currentBet || 0, metrics.toCall || 0, 1);
+  const toCall = Math.max(metrics.toCall || 0, 0);
+  const potRaiseTo = currentBet + metrics.pot + toCall;
+  return [
+    raiseSizeOption("2.5x raise", currentBet * 2.5, "小尺度加注", 0.24, "small"),
+    raiseSizeOption("3x raise", currentBet * 3, "标准加注", 0.26, "small"),
+    raiseSizeOption("4x raise", currentBet * 4, "大尺度加注", 0.18, "big"),
+    raiseSizeOption("Pot raise", potRaiseTo, "满池加注", 0.12, "big"),
+  ];
+}
+
 function chooseSizing({ board, metrics, profile, equity, toCall, context, position }) {
   const wetness = profile.texture.wetness || 0;
   const spr = metrics.spr;
@@ -391,6 +410,14 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
       sizeOption("3.0bb open", 3, "SB / 低级别惩罚", 0.18),
     ]);
   }
+  if (toCall > 0) {
+    const raiseOptions = postflopRaiseSizes(metrics);
+    const primary =
+      nutted || (valueHeavy && wetness > 0.38)
+        ? raiseOptions.find((option) => option.label === "3x raise")
+        : raiseOptions.find((option) => option.label === "2.5x raise");
+    return makeSizing(primary || raiseOptions[0], "面对下注时使用加注到总额的标准尺度", raiseOptions);
+  }
   const postflopOptions = commonPostflopSizes(metrics.pot, spr, board.length);
   if (board.length === 5 && (valueHeavy || nutted) && spr >= 3) {
     const primary = equity > 0.72 || nutted ? postflopOptions.find((option) => option.label === "125% pot") : postflopOptions.find((option) => option.label === "100% pot");
@@ -413,9 +440,21 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
 }
 
 function alignSizingWithActions(sizing, actions, board, toCall) {
-  if (!sizing?.options?.length || board.length < 3 || toCall > 0) return sizing;
+  if (!sizing?.options?.length || board.length < 3) return sizing;
   if (sizing.label?.includes("All-in")) return sizing;
   const top = actions[0]?.key;
+  if (toCall > 0) {
+    const raiseBuckets = {
+      "raise-small": (option) => option.raiseSize === "small",
+      raise: (option) => option.raiseSize === "small",
+      "raise-big": (option) => option.raiseSize === "big",
+    };
+    const matcher = raiseBuckets[top];
+    if (!matcher) return sizing;
+    const primary = sizing.options.find((option) => matcher(option));
+    if (!primary || primary.label === sizing.label) return sizing;
+    return makeSizing(primary, `按最高频动作 ${actions[0].label} 同步主尺度`, sizing.options);
+  }
   const buckets = {
     "bet-small": (option) => (option.fraction || 0) > 0 && option.fraction <= 0.35,
     "bet-mid": (option) => (option.fraction || 0) > 0.35 && option.fraction <= 0.7,
@@ -467,6 +506,28 @@ function strategyFacingBet({ equity, metrics, profile, position, context, rangeM
     { key: "raise-small", label: "小加注", weight: smallRaise, tone: "accent" },
     { key: "raise-big", label: "大加注", weight: bigRaise, tone: "strong" },
     { key: "jam", label: "全压", weight: jam, tone: "strong" },
+  ]);
+}
+
+function expandFacingJamToRaiseBuckets(actions, fallbackActions, { metrics, profile }) {
+  if (profile.street === "preflop" || metrics.toCall <= 0) return actions;
+  if (!actions?.length || actions.some((action) => action.key === "raise-small" || action.key === "raise-big")) return actions;
+  const jam = actions.find((action) => action.key === "jam");
+  if (!jam || jam.frequency <= 0.002) return actions;
+
+  const fallbackSmall = fallbackActions.find((action) => action.key === "raise-small")?.frequency || 0;
+  const fallbackBig = fallbackActions.find((action) => action.key === "raise-big")?.frequency || 0;
+  const fallbackJam = fallbackActions.find((action) => action.key === "jam")?.frequency || 0;
+  const fallbackRaise = fallbackSmall + fallbackBig + fallbackJam;
+  const jamShare = fallbackRaise > 0 ? clamp(fallbackJam / fallbackRaise, 0.18, 0.55) : 0.34;
+  const smallShare = fallbackSmall + fallbackBig > 0 ? fallbackSmall / (fallbackSmall + fallbackBig) : 0.68;
+  const raisePool = jam.frequency * (1 - jamShare);
+
+  return normalizeActions([
+    ...actions.filter((action) => action.key !== "jam").map((action) => ({ ...action, weight: action.frequency })),
+    { key: "raise-small", label: "小加注", weight: raisePool * smallShare, tone: "accent" },
+    { key: "raise-big", label: "大加注", weight: raisePool * (1 - smallShare), tone: "strong" },
+    { ...jam, weight: jam.frequency * jamShare },
   ]);
 }
 
@@ -785,7 +846,11 @@ export function recommendStrategy({
     metrics,
     profile,
   });
-  const baseActions = solvedActions || distilledActions || approximateActions;
+  const baseActions =
+    solvedActions ||
+    (distilledActions
+      ? expandFacingJamToRaiseBuckets(distilledActions, approximateActions, { metrics, profile })
+      : approximateActions);
   const actions = applyLinePressure(baseActions, {
     equity: equityResult.equity,
     metrics,

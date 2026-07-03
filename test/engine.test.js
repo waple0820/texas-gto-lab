@@ -586,6 +586,11 @@ const semiBluffRaise = recommendStrategy({
 assert.ok(
   raiseFrequency(semiBluffRaise) > 0.18,
 );
+assert.ok(semiBluffRaise.sizing.options.some((option) => option.label === "2.5x raise" && option.amount === 10));
+assert.ok(semiBluffRaise.sizing.options.some((option) => option.label === "3x raise" && option.amount === 12));
+assert.ok(semiBluffRaise.sizing.options.every((option) => !option.label.includes("% pot")));
+assert.ok(semiBluffRaise.sizing.options.some((option) => option.raiseSize === "small"));
+assert.ok(semiBluffRaise.sizing.options.some((option) => option.raiseSize === "big"));
 
 const weakLineRiverBluff = recommendStrategy({
   hero: ["5c", "7h"],
