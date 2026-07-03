@@ -425,6 +425,71 @@ const openOption = recommendStrategy({
 });
 assert.ok(openOption.actions.some((action) => action.key === "fold"));
 
+const btnUnopenedFacingBlinds = recommendStrategy({
+  hero: ["8h", "3h"],
+  board: [],
+  position: "BTN",
+  context: "unopened",
+  tableSize: 6,
+  pot: 1.5,
+  toCall: 1,
+  stackBb: 100,
+  opponents: 5,
+  iterations: 300,
+  rng: mulberry32(131),
+});
+assert.equal(btnUnopenedFacingBlinds.sizing.label, "2.2bb open");
+assert.ok(!btnUnopenedFacingBlinds.sizing.options.some((option) => option.label.includes("3bet")));
+
+const bbBlindCheckOpenSizing = recommendStrategy({
+  hero: ["As", "7d"],
+  board: [],
+  position: "BB",
+  context: "blind-check",
+  tableSize: 6,
+  pot: 1.5,
+  toCall: 0,
+  stackBb: 100,
+  opponents: 5,
+  iterations: 300,
+  rng: mulberry32(132),
+});
+assert.equal(bbBlindCheckOpenSizing.sizing.label, "2.5bb open");
+assert.ok(!bbBlindCheckOpenSizing.sizing.options.some((option) => option.label.includes("隔离")));
+
+const limpedPotIsolationSizing = recommendStrategy({
+  hero: ["Kh", "Qh"],
+  board: [],
+  position: "CO",
+  context: "limped-pot",
+  tableSize: 6,
+  pot: 2.5,
+  toCall: 1,
+  stackBb: 100,
+  opponents: 4,
+  iterations: 300,
+  rng: mulberry32(133),
+});
+assert.equal(limpedPotIsolationSizing.sizing.label, "4.5bb 隔离加注");
+assert.ok(!limpedPotIsolationSizing.sizing.options.some((option) => option.label.includes("3bet")));
+
+const bbFacingButtonOpenSizing = recommendStrategy({
+  hero: ["Ah", "Qs"],
+  board: [],
+  position: "BB",
+  context: "blind-defense",
+  tableSize: 6,
+  pot: 4.2,
+  toCall: 1.2,
+  currentBet: 2.2,
+  stackBb: 100,
+  opponents: 1,
+  iterations: 300,
+  rng: mulberry32(134),
+});
+assert.equal(bbFacingButtonOpenSizing.sizing.label, "4x 3bet");
+assert.equal(bbFacingButtonOpenSizing.sizing.amount, 8.8);
+
 const aksFacingThreeBet = recommendStrategy({
   hero: ["Ah", "Kh"],
   board: [],

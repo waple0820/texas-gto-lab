@@ -29,8 +29,10 @@ const app = document.querySelector("#app");
 const CONTEXT_LABELS = {
   unopened: "首先开池 (RFI)",
   "check-option": "过牌选项",
+  "blind-check": "大盲过牌选项",
   "facing-open": "面对开池",
   "blind-defense": "盲注防守",
+  squeeze: "挤压加注",
   "facing-3bet": "面对 3bet",
   "single-raised": "单加注池",
   "three-bet-pot": "3bet 池",
@@ -1065,8 +1067,12 @@ function lastActionFor(actor) {
 
 function heroReviewContext(toCall) {
   if (simulator.street === "preflop") {
-    if (simulator.currentBet > 2.5) return "facing-3bet";
-    if (toCall <= 0) return "check-option";
+    const raises = (simulator.actions || []).filter((action) => action.street === "preflop" && (action.type === "raise" || action.type === "allin")).length;
+    const hasLimp = (simulator.actions || []).some((action) => action.street === "preflop" && action.type === "call");
+    if (toCall <= 0) return hasLimp ? "check-option" : "blind-check";
+    if (raises >= 2) return "facing-3bet";
+    if (raises === 1) return hasLimp ? "squeeze" : "facing-open";
+    if (hasLimp) return "limped-pot";
     return "unopened";
   }
   if (toCall > 0 && simulator.currentBet >= simulator.pot * 0.55) return "facing-bet";
@@ -1147,6 +1153,7 @@ function captureHeroDecision(type) {
     stackBb: effectiveStack,
     pot: simulator.pot,
     toCall,
+    currentBet: simulator.currentBet,
     opponents: 1,
     rangeWeights,
     iterations: 700,
@@ -1723,6 +1730,7 @@ async function solveMpRangeStrategy(state, me, sig, weights) {
         stackBb: me.stackBb || 100,
         pot,
         toCall,
+        currentBet: state.currentBet ?? toCall,
         opponents: 1,
         rangeWeights: weights,
         iterations: 120,

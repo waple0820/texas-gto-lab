@@ -250,7 +250,15 @@ function buildRangeModel({ hero, board, rangeWeights, rangeInfo, profile, positi
 }
 
 function hasFreeCheckOption(context) {
-  return ["check-option", "limped-pot", "blind-check"].includes(context);
+  return ["check-option", "limped-pot"].includes(context);
+}
+
+function hasPreflopOpenOpportunity(context) {
+  return ["unopened", "blind-check"].includes(context);
+}
+
+function hasPreflopIsolationOpportunity(context) {
+  return ["check-option", "limped-pot"].includes(context);
 }
 
 function sizeOption(label, amount, role, frequency = null) {
@@ -260,6 +268,11 @@ function sizeOption(label, amount, role, frequency = null) {
     role,
     frequency,
   };
+}
+
+function blindSizeOption(amount, suffix, role, frequency = null) {
+  const rounded = round(Math.max(0, amount), 1);
+  return sizeOption(`${rounded.toFixed(1)}bb ${suffix}`, rounded, role, frequency);
 }
 
 function potSize(label, fraction, pot, role, frequency = null) {
@@ -316,6 +329,7 @@ function commonPostflopSizes(pot, spr, boardCards) {
 function chooseSizing({ board, metrics, profile, equity, toCall, context, position }) {
   const wetness = profile.texture.wetness || 0;
   const spr = metrics.spr;
+  const raiseBase = Math.max(metrics.currentBet || 0, toCall);
   const valueHeavy = equity > 0.66 || (MADE_HAND_WEIGHT[profile.madeName] || 0) > 0.48;
   const nutted = (MADE_HAND_WEIGHT[profile.madeName] || 0) > 0.62;
 
@@ -326,37 +340,47 @@ function chooseSizing({ board, metrics, profile, equity, toCall, context, positi
     ]);
   }
   if (board.length === 0) {
-    if (toCall <= 0 && hasFreeCheckOption(context)) {
-      const primary = sizeOption("4.0bb 隔离加注", Math.max(4, metrics.pot * 1.8), "隔离 limper", 0.34);
+    if (hasPreflopOpenOpportunity(context)) {
+      const primary = preflopOpenPrimary(position, metrics.effectiveStack);
+      return makeSizing(primary, "翻前 open 常见尺度树", [
+        sizeOption("2.0bb open", 2, "短筹码 / 后位高频", 0.18),
+        sizeOption("2.2bb open", 2.2, "后位常规", 0.24),
+        sizeOption("2.5bb open", 2.5, "中早位标准", 0.28),
+        sizeOption("3.0bb open", 3, "SB / 低级别惩罚", 0.18),
+      ]);
+    }
+    if (hasPreflopIsolationOpportunity(context)) {
+      const primaryAmount = Math.max(4, metrics.pot * 1.8);
+      const primary = blindSizeOption(primaryAmount, "隔离加注", "隔离 limper", 0.34);
       return makeSizing(primary, "免费看牌时不能弃牌，主动入池使用隔离加注树", [
-        sizeOption("3.5bb 小隔离", Math.max(3.5, metrics.pot * 1.55), "低风险隔离", 0.22),
-        sizeOption("4.5bb 标准隔离", Math.max(4.5, metrics.pot * 2.05), "标准隔离", 0.26),
-        sizeOption("6.0bb 大隔离", Math.max(6, metrics.pot * 2.7), "多 limper / OOP 压力", 0.1),
+        blindSizeOption(Math.max(3.5, metrics.pot * 1.55), "小隔离", "低风险隔离", 0.22),
+        blindSizeOption(Math.max(4.5, metrics.pot * 2.05), "标准隔离", "标准隔离", 0.26),
+        blindSizeOption(Math.max(6, metrics.pot * 2.7), "大隔离", "多 limper / OOP 压力", 0.1),
       ]);
     }
     if (toCall > 0 && context === "facing-3bet") {
-      const primary = sizeOption("2.2x 4bet", Math.max(toCall * 2.2, 16), "常规 4bet", 0.38);
+      const primary = sizeOption("2.2x 4bet", Math.max(raiseBase * 2.2, 16), "常规 4bet", 0.38);
       return makeSizing(primary, "面对 3bet 使用小 4bet / jam 混合", [
-        sizeOption("2.0x 4bet", Math.max(toCall * 2, 14), "IP 小 4bet", 0.22),
-        sizeOption("2.5x 4bet", Math.max(toCall * 2.5, 18), "OOP 压力 4bet", 0.24),
+        sizeOption("2.0x 4bet", Math.max(raiseBase * 2, 14), "IP 小 4bet", 0.22),
+        sizeOption("2.5x 4bet", Math.max(raiseBase * 2.5, 18), "OOP 压力 4bet", 0.24),
         sizeOption("All-in", metrics.effectiveStack, "低 SPR / 强极化", 0.16),
       ]);
     }
     if (toCall > 0) {
       if (context === "squeeze") {
-        const primary = sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "多人底池挤压", 0.38);
+        const primary = sizeOption("4.5x squeeze", Math.max(raiseBase * 4.5, 9), "多人底池挤压", 0.38);
         return makeSizing(primary, "面对 open + cold call 使用更大 squeeze 尺度", [
-          sizeOption("4x squeeze", Math.max(toCall * 4, 8), "较小挤压"),
-          sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "标准挤压"),
-          sizeOption("5.5x squeeze", Math.max(toCall * 5.5, 11), "OOP / 多 caller 压力"),
+          sizeOption("4x squeeze", Math.max(raiseBase * 4, 8), "较小挤压"),
+          sizeOption("4.5x squeeze", Math.max(raiseBase * 4.5, 9), "标准挤压"),
+          sizeOption("5.5x squeeze", Math.max(raiseBase * 5.5, 11), "OOP / 多 caller 压力"),
         ]);
       }
       const outOfPosition = position === "SB" || position === "BB";
-      const primary = sizeOption(outOfPosition ? "4x 3bet" : "3x 3bet", Math.max(toCall * (outOfPosition ? 4 : 3), outOfPosition ? 8 : 6), outOfPosition ? "OOP 3bet" : "IP 3bet", 0.36);
+      const primary = sizeOption(outOfPosition ? "4x 3bet" : "3x 3bet", Math.max(raiseBase * (outOfPosition ? 4 : 3), outOfPosition ? 8 : 6), outOfPosition ? "OOP 3bet" : "IP 3bet", 0.36);
       return makeSizing(primary, "面对 open 使用 IP 小 3bet、OOP 大 3bet、squeeze 加大", [
-        sizeOption("3x 3bet", Math.max(toCall * 3, 6), "IP 标准"),
-        sizeOption("4x 3bet", Math.max(toCall * 4, 8), "OOP 标准"),
-        sizeOption("4.5x squeeze", Math.max(toCall * 4.5, 9), "多人底池挤压"),
+        sizeOption("3x 3bet", Math.max(raiseBase * 3, 6), "IP 标准"),
+        sizeOption("4x 3bet", Math.max(raiseBase * 4, 8), "OOP 标准"),
+        sizeOption("4.5x squeeze", Math.max(raiseBase * 4.5, 9), "多人底池挤压"),
       ]);
     }
     const primary = preflopOpenPrimary(position, metrics.effectiveStack);
@@ -626,6 +650,7 @@ export function recommendStrategy({
   stackBb = 100,
   pot = 6,
   toCall = 0,
+  currentBet = toCall,
   opponents = 1,
   rangeStyle = "balanced",
   rangeWeights,
@@ -655,6 +680,7 @@ export function recommendStrategy({
     equity: equityResult.equity,
     pot,
     toCall,
+    currentBet,
     effectiveStack: stackBb,
   });
   const rangeInfo = rangeCoverage(activeRange);

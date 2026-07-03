@@ -886,6 +886,7 @@ function recommendFor(player) {
     stackBb: Math.max(1, player.stack),
     pot: table.pot,
     toCall,
+    currentBet: table.currentBet,
     opponents: Math.max(1, activePlayers().filter((seat) => seat.id !== player.id && !seat.folded).length),
     rangeWeights,
     iterations: player.type === "ai" ? 420 : 700,
@@ -901,16 +902,29 @@ function positionFor(player) {
   return "CO";
 }
 
+function preflopAggressionCount() {
+  return table.actions.filter((item) => item.street === "preflop" && (item.type === "raise" || item.type === "allin")).length;
+}
+
+function preflopHasLimp() {
+  return table.actions.some((item) => item.street === "preflop" && item.type === "call");
+}
+
 function contextFor(player, toCall) {
   if (table.street === "preflop") {
+    const raises = preflopAggressionCount();
+    const hasLimp = preflopHasLimp();
     if (toCall <= 0) {
-      if (player.id === table.bigBlindId || table.actions.some((item) => item.street === "preflop" && item.type === "call")) {
-        return "check-option";
-      }
+      if (player.id === table.bigBlindId) return hasLimp ? "check-option" : "blind-check";
+      if (hasLimp) return "check-option";
       return "unopened";
     }
-    if (table.currentBet > BIG_BLIND) return "facing-3bet";
-    return player.id === table.bigBlindId ? "blind-defense" : "facing-open";
+    if (raises >= 2) return "facing-3bet";
+    if (raises === 1) {
+      if (hasLimp) return "squeeze";
+      return player.id === table.bigBlindId ? "blind-defense" : "facing-open";
+    }
+    return hasLimp ? "limped-pot" : "unopened";
   }
   if (toCall > 0 && table.currentBet >= table.pot * 0.55) return "facing-bet";
   if (toCall > 0) return "facing-raise";
