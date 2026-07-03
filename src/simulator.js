@@ -182,6 +182,7 @@ export class HoldemSimulator {
       stackBb: Math.max(1, this.aiStack),
       pot: this.pot,
       toCall,
+      currentBet: this.currentBet,
       opponents: 1,
       rangeWeights,
       iterations: this.profile.samples,
@@ -219,10 +220,10 @@ export class HoldemSimulator {
 
       if (raises.length === 0) {
         if (position === "SB") return "unopened";
-        return hasLimp || actor === "ai" ? "check-option" : "unopened";
+        return hasLimp ? "check-option" : "blind-check";
       }
       if (raises.length === 1) {
-        if (toCall <= 0) return "check-option";
+        if (toCall <= 0) return hasLimp ? "check-option" : "blind-check";
         return position === "BB" ? "blind-defense" : "facing-open";
       }
       if (toCall > 0) return "facing-3bet";

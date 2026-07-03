@@ -545,10 +545,11 @@ export function analyzeDraws(hero = [], board = []) {
   };
 }
 
-export function computeDecisionMetrics({ equity, pot, toCall, effectiveStack, betSize } = {}) {
+export function computeDecisionMetrics({ equity, pot, toCall, effectiveStack, betSize, currentBet } = {}) {
   const cleanPot = Math.max(0, Number(pot) || 0);
   const cleanCall = Math.max(0, Number(toCall) || 0);
   const cleanStack = Math.max(0, Number(effectiveStack) || 0);
+  const cleanCurrentBet = Math.max(0, Number(currentBet) || cleanCall);
   const cleanBet = Math.max(0, Number(betSize) || cleanPot * 0.75 || 1);
   const potOdds = cleanCall > 0 ? cleanCall / (cleanPot + cleanCall) : 0;
   const callEv = cleanCall > 0 ? equity * (cleanPot + cleanCall) - (1 - equity) * cleanCall : 0;
@@ -558,6 +559,7 @@ export function computeDecisionMetrics({ equity, pot, toCall, effectiveStack, be
   return {
     pot: cleanPot,
     toCall: cleanCall,
+    currentBet: cleanCurrentBet,
     effectiveStack: cleanStack,
     potOdds,
     callEv,
