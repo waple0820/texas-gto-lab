@@ -554,7 +554,7 @@ function applyAction(player, action) {
     const target =
       id === "allin"
         ? player.streetBet + player.stack
-        : explicitSize && table.street === "preflop"
+        : explicitSize && (table.street === "preflop" || toCall > 0)
           ? Math.max(table.currentBet, explicitSize)
           : table.currentBet + size;
     const paid = commit(player, Math.max(0, target - player.streetBet));
@@ -1051,8 +1051,8 @@ function actionForRecommendation(picked, recommendation, toCall) {
   if (toCall > 0) {
     if (picked.key === "fold") return "fold";
     if (picked.key === "jam") return "allin";
-    if (picked.key === "raise-big" || picked.key === "raise") return "pot";
-    if (picked.key === "raise-small") return "half";
+    if (picked.key === "raise-big") return sizedAction("pot", recommendation, "raise-big", "大加注");
+    if (picked.key === "raise" || picked.key === "raise-small") return sizedAction("half", recommendation, "raise-small", "小加注");
     return "check-call";
   }
   if (picked.key === "bet-small") return sizedAction("third", recommendation, "small", "小注");
@@ -1068,6 +1068,8 @@ function sizedAction(id, recommendation, bucket, label) {
 }
 
 function sizingOptionForBucket(options, bucket) {
+  if (bucket === "raise-small") return options.find((option) => option.raiseSize === "small");
+  if (bucket === "raise-big") return options.find((option) => option.raiseSize === "big");
   const ranges = {
     small: (option) => (option.fraction || 0) > 0 && option.fraction <= 0.35,
     mid: (option) => (option.fraction || 0) > 0.35 && option.fraction <= 0.7,
@@ -1226,17 +1228,16 @@ function standardSizingOptions(options, street, toCall) {
 
 function sizeButtonOption(option, toCall, street) {
   const fraction = Number(option.fraction || 0);
-  const id = actionIdForSizing(fraction);
+  const facingRaise = street !== "preflop" && toCall > 0;
+  const id = facingRaise ? (option.raiseSize === "big" ? "pot" : "half") : actionIdForSizing(fraction);
   const amount = round(option.amount || 0, 1);
   const gtoKeys =
     street === "preflop"
       ? ["raise"]
-      : toCall > 0
-      ? fraction > 1.05
-        ? ["raise-big", "jam"]
-        : fraction > 0.7
-          ? ["raise-big"]
-          : ["raise-small", "raise"]
+      : facingRaise
+      ? option.raiseSize === "big"
+        ? ["raise-big"]
+        : ["raise-small", "raise"]
       : fraction > 1.05
         ? ["bet-over"]
         : fraction > 0.7
