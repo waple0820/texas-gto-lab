@@ -1799,16 +1799,30 @@ function seatHudHtml(stats) {
   </div>`;
 }
 
-function renderMpSeats(state) {
+function visualSeatSlots(state) {
   const players = state?.players || [];
-  const slots = Array.from({ length: 6 }, (_, index) => players[index] || null);
+  const physicalSlots = Array.from({ length: 6 }, (_, index) => players[index] || null);
+  const meIndex = physicalSlots.findIndex((player) => player?.id === state?.me?.id);
+  if (meIndex < 0) return physicalSlots.map((player, index) => ({ player, physicalIndex: index }));
+  const heroSlot = 3;
+  return physicalSlots.map((_, visualIndex) => {
+    const physicalIndex = (meIndex + visualIndex - heroSlot + physicalSlots.length) % physicalSlots.length;
+    return {
+      player: physicalSlots[physicalIndex],
+      physicalIndex,
+    };
+  });
+}
+
+function renderMpSeats(state) {
+  const slots = visualSeatSlots(state);
   $("#mp-seats").innerHTML = slots
-    .map((player, index) => {
+    .map(({ player, physicalIndex }, index) => {
       if (!player) {
         return `
           <div class="mp-seat mp-seat-${index} empty">
             <div class="mp-seat-shell">
-              <strong>Seat ${index + 1}</strong>
+              <strong>Seat ${physicalIndex + 1}</strong>
               <span>空位</span>
             </div>
           </div>
