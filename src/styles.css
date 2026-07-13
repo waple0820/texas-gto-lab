@@ -1448,6 +1448,10 @@ button:focus-visible {
   box-shadow: var(--shadow-glow);
 }
 
+.mp-advice[hidden] {
+  display: none;
+}
+
 .advice-hero[hidden] {
   display: none;
 }
