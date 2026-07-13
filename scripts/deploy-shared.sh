@@ -21,6 +21,12 @@ cd "$ROOT_DIR"
 npm test
 npm run build
 
+EXPECTED_JS="$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' dist/index.html | head -n 1)"
+if [ -z "$EXPECTED_JS" ]; then
+  echo "could not determine the built JavaScript asset" >&2
+  exit 1
+fi
+
 SSH=(ssh -o StrictHostKeyChecking=no)
 SCP=(scp -o StrictHostKeyChecking=no)
 if command -v sshpass >/dev/null 2>&1 && [ -n "${SSHPASS:-}" ]; then
@@ -43,8 +49,19 @@ COPYFILE_DISABLE=1 tar czf "$TARBALL" \
   # deps are usually unchanged (prebuilt dist is shipped); install if needed:
   [ -d node_modules ] || npm install --no-audit --no-fund
   tmux kill-session -t '$SESSION' 2>/dev/null || true
+  sleep 1
+  if ss -H -ltn 'sport = :$PORT' | grep -q .; then
+    echo 'port $PORT is still occupied after stopping tmux session $SESSION' >&2
+    ss -ltn 'sport = :$PORT' >&2 || true
+    exit 1
+  fi
   tmux new-session -d -s '$SESSION' -c '$REMOTE_DIR' 'HOST=0.0.0.0 PORT=$PORT npm run serve'
   sleep 2
-  curl -fsS -o /dev/null -w 'deployed http_code=%{http_code}\n' http://127.0.0.1:$PORT/
+  REMOTE_INDEX=\$(curl -fsS http://127.0.0.1:$PORT/)
+  if ! printf '%s' \"\$REMOTE_INDEX\" | grep -Fq '$EXPECTED_JS'; then
+    echo 'deployment asset mismatch: expected $EXPECTED_JS' >&2
+    exit 1
+  fi
+  curl -fsS -o /dev/null -w 'deployed asset=$EXPECTED_JS http_code=%{http_code}\n' http://127.0.0.1:$PORT/health
 "
 echo "deployed to http://${REMOTE_HOST#*@}:$PORT/"
