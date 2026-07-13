@@ -1,8 +1,9 @@
 # GTO Solver Track
 
-The strategy engine and trained MLP artifact are *GTO-inspired* heuristics: they
-produce reasonable mixed frequencies but carry **no equilibrium guarantee** and,
-until now, no way to measure how far from GTO they actually were.
+Texas GTO Lab contains several policy families with different guarantees. Exact
+CFR and distilled policies currently solve **heads-up subgames only**. Preflop
+uses position tables, while multiway postflop uses an explicitly labelled
+range/equity approximation and carries no Nash-equilibrium guarantee.
 
 This track adds a real solver whose distance to GTO is an *exact number*:
 **exploitability** = how much an optimal best-responder beats the strategy,
@@ -15,17 +16,17 @@ Measured against exact best response, on the deployed engine:
 
 | decision | policy in the live product | exploitability (vs GTO 0%) |
 |----------|----------------------------|---------------------------:|
-| river, 5 canonical textures | exact CFR solved per combo | **~0.14% pot** |
-| river, all other open/facing | distilled GTO (generalizes) | **~9% pot** (was ~29% heuristic) |
-| turn / flop | heuristic + exploits | not yet measured in-product |
+| heads-up river, 5 canonical textures | exact CFR solved per combo | **~0.14% pot** |
+| heads-up river, all other open/facing | distilled GTO (generalizes) | **~9% pot** (was ~29% heuristic) |
+| heads-up turn / flop | street-cascaded distilled policies | held-out / self-test validation; no global tree guarantee |
+| multiway postflop | range/equity approximation | not solved; UI labels it “多人参考” |
 | preflop | position range tables | n/a (table policy) |
 
-So on the river the product is at or near GTO; the remaining gap is the **turn
-and flop**, which still use the heuristic. The river distilled model sits at a
-**feature-limited plateau** (~9% — held-out TV ~0.12 from equilibrium; more
-training data and wider MLPs did not move it, so the limit is the 33-feature
-abstraction, not data). Closing the turn/flop gap is the next frontier and needs
-the solve→distill pipeline extended to those streets (tracked in the roadmap).
+The river exact result is near GTO only inside its specified heads-up subgame.
+The river distilled model sits at a **feature-limited plateau** (~9% on the
+measured held-out subgame). Flop and turn have street-specific distilled models,
+but that does not prove a full no-limit tree equilibrium. Multiway remains a
+separate unsolved track and must never be presented as a heads-up GTO result.
 
 ## Why exploitability is the right metric
 

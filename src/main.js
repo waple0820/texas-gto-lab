@@ -39,6 +39,10 @@ const CONTEXT_LABELS = {
   "limped-pot": "跛入池",
 };
 
+const PREFLOP_CONTEXTS = new Set(["unopened", "check-option", "facing-open", "facing-3bet", "blind-defense"]);
+const POSTFLOP_CONTEXTS = new Set(["single-raised", "three-bet-pot", "facing-bet", "facing-raise"]);
+const FACING_CONTEXTS = new Set(["facing-open", "facing-3bet", "blind-defense", "facing-bet", "facing-raise"]);
+
 const labState = {
   hero: [],
   board: [],
@@ -344,7 +348,7 @@ app.innerHTML = `
               </label>
               <button class="primary-action" id="mp-quick"><i data-lucide="zap"></i><span>快速开始</span></button>
               <button class="ghost-action" id="mp-join"><i data-lucide="log-in"></i><span>仅入座 · 自己配桌</span></button>
-              <p class="join-hint">一键坐下,自动配 3 个 GTO 电脑、立即发牌 —— 每个决策都有即时纠错。</p>
+              <p class="join-hint">一键坐下,自动配 2 个策略电脑、立即发牌 —— 每个决策都有即时纠错。</p>
             </div>
             <div class="mp-toolbar">
               <button id="mp-ready">举手准备</button>
@@ -625,6 +629,26 @@ function readLabInputs() {
   };
 }
 
+function validateLabInputs(inputs) {
+  const postflop = labState.board.length >= 3;
+  const validContexts = postflop ? POSTFLOP_CONTEXTS : PREFLOP_CONTEXTS;
+  if (!validContexts.has(inputs.context)) {
+    return postflop
+      ? "当前已有公共牌，请选择翻后行动线"
+      : "当前是翻前局面，请选择翻前行动线";
+  }
+  if (FACING_CONTEXTS.has(inputs.context) && inputs.toCall <= 0) {
+    return "面对下注时，需跟注 BB 必须大于 0";
+  }
+  if (!FACING_CONTEXTS.has(inputs.context) && inputs.toCall > 0) {
+    return "当前行动线没有待跟注金额；请改为面对下注，或将需跟注设为 0";
+  }
+  if (inputs.opponents < 1 || inputs.opponents >= inputs.tableSize) {
+    return `对手人数应在 1 到 ${Math.max(1, inputs.tableSize - 1)} 之间`;
+  }
+  return "";
+}
+
 async function runCalculation() {
   if (labState.hero.length !== 2) {
     setStatus("需要两张手牌", "warn");
@@ -645,6 +669,11 @@ async function runCalculation() {
 
   try {
     const inputs = readLabInputs();
+    const inputError = validateLabInputs(inputs);
+    if (inputError) {
+      setStatus(inputError, "warn");
+      return;
+    }
     const result = recommendStrategy({
       hero: labState.hero,
       board: labState.board,
@@ -666,6 +695,7 @@ const POLICY_BADGES = {
   distilled: { label: "GTO 泛化", note: "蒸馏 GTO 神经网络", kind: "gto" },
   preflop: { label: "翻前范围表", note: "位置范围表策略", kind: "info" },
   trained: { label: "训练策略", note: "自博弈训练策略", kind: "info" },
+  multiway: { label: "多人参考", note: "范围权益近似 · 非多人均衡求解", kind: "info" },
   heuristic: { label: "启发式", note: "范围角色启发式", kind: "muted" },
 };
 
@@ -773,6 +803,15 @@ function randomScenario() {
   const boardCount = [0, 3, 4, 5][Math.floor(Math.random() * 4)];
   labState.board = Array.from({ length: boardCount }, () => deck.pop());
   labState.target = boardCount < 5 ? "board" : "hero";
+  const postflop = boardCount >= 3;
+  const contexts = postflop ? ["single-raised", "three-bet-pot", "facing-bet", "facing-raise"] : ["unopened", "check-option", "facing-open", "facing-3bet"];
+  const context = contexts[Math.floor(Math.random() * contexts.length)];
+  const preflopPot = { unopened: 1.5, "check-option": 2, "facing-open": 4, "facing-3bet": 13 };
+  const pot = postflop ? [6, 10, 18, 32][Math.floor(Math.random() * 4)] : preflopPot[context];
+  $("#context").value = context;
+  $("#pot-size").value = String(pot);
+  $("#to-call").value = FACING_CONTEXTS.has(context) ? String(postflop ? round(pot * [0.25, 0.33, 0.5, 0.75][Math.floor(Math.random() * 4)], 1) : context === "facing-3bet" ? 6.5 : 2.5) : "0";
+  resetRangeFromControls();
   renderLab();
 }
 
@@ -1954,33 +1993,37 @@ function coachLine(top, advice, me, state) {
   const isAggro = !isFold && !isPassive; // bet / raise / jam
   const preflop = !state?.board || state.board.length === 0;
   const toCall = Number(me?.toCall) || 0;
+  const multiway = advice.policySource?.type === "multiway";
+  const strategyName = multiway ? "多人参考策略" : "GTO";
 
   if (preflop) {
     const code = me?.hole?.length === 2 ? handCodeFromCards(me.hole) : "这手牌";
     const ctx = CONTEXT_LABELS[me?.context] || "这个位置";
     const act = isFold ? "弃牌" : isAggro ? "加注" : "跟注";
-    return `${code}(${me?.position || ""} ${ctx}):GTO 倾向「${act}」。`;
+    return `${code}(${me?.position || ""} ${ctx}):${strategyName}倾向「${act}」。`;
   }
   if (toCall > 0) {
     if (isFold) {
       return eq < odds
-        ? `权益 ${eq}% 低于跟注所需的底池赔率 ${odds}%,所以 GTO 弃牌。`
-        : `综合你的范围与位置,GTO 在这里倾向弃牌。`;
+        ? `权益 ${eq}% 低于跟注所需的底池赔率 ${odds}%,所以${strategyName}倾向弃牌。`
+        : `综合你的范围与位置,${strategyName}在这里倾向弃牌。`;
     }
     if (isPassive) {
       return eq >= odds
         ? `权益 ${eq}% 高于底池赔率 ${odds}%,跟注长期有利可图。`
-        : `用足够权益 + 后续牌力潜力跟注防守。`;
+        : multiway
+          ? `即时权益 ${eq}% 低于底池赔率 ${odds}%；该跟注来自范围近似，不能视为已证明的盈利跟注。`
+          : `即时权益 ${eq}% 低于底池赔率 ${odds}%；节点范围 EV 仍保留跟注频率，单手蒙特卡洛权益不能单独定论。`;
     }
     return eq >= 55
-      ? `你的权益领先(${eq}%),GTO 用加注向对手要价值。`
-      : `权益 ${eq}%,GTO 以加注施压、把弱牌打出底池(半诈唬)。`;
+      ? `你的权益领先(${eq}%),${strategyName}用加注向对手要价值。`
+      : `权益 ${eq}%,${strategyName}以加注施压、把弱牌打出底池(半诈唬)。`;
   }
   // no bet to face (open / checked-to)
-  if (isPassive) return `GTO 过牌:控制底池、保护你的过牌范围。`;
+  if (isPassive) return `${strategyName}过牌:控制底池、保护你的过牌范围。`;
   return eq >= 55
-    ? `你领先(权益 ${eq}%),GTO 下注获取价值、保护牌力。`
-    : `GTO 下注:以较低权益施压,迫使对手弃掉更好的牌(诈唬/半诈唬)。`;
+    ? `你领先(权益 ${eq}%),${strategyName}下注获取价值、保护牌力。`
+    : `${strategyName}下注:以较低权益施压,迫使对手弃掉更好的牌(诈唬/半诈唬)。`;
 }
 
 function renderMpAdvice(state) {

@@ -601,6 +601,7 @@ function buildReasons({ equityResult, metrics, profile, rangeInfo, position, con
     `范围角色 ${rangeModel.roleLabel} / 分位 ${pct(rangeModel.percentile, 0)}`,
     policySource.type === "trained" ? `训练策略 ${policySource.version}` : null,
     policySource.type === "preflop" ? `翻前范围表 ${policySource.version}` : null,
+    policySource.type === "multiway" ? "多人底池范围权益近似，非纳什均衡解" : null,
     profile.street === "preflop" ? `起手牌 ${profile.handCode}` : `${profile.description}`,
     `位置 ${position} / ${context}`,
   ].filter(Boolean);
@@ -651,6 +652,7 @@ export function recommendStrategy({
     rng,
   });
   const profile = analyzeMadeHand(hero, board);
+  const multiwayPostflop = profile.street !== "preflop" && (tableSize > 2 || opponents > 1);
   const metrics = computeDecisionMetrics({
     equity: equityResult.equity,
     pot,
@@ -697,30 +699,33 @@ export function recommendStrategy({
       : hasFreeCheckOption(context)
         ? strategyCheckOption({ equity: equityResult.equity, metrics, profile, position, tableSize, rangeModel })
         : strategyOpenAction({ equity: equityResult.equity, metrics, profile, position, context, tableSize, rangeModel }));
-  const trained = applyTrainedPolicy({
-    actions: heuristicActions,
-    board,
-    equity: equityResult.equity,
-    equityHistogram,
-    metrics,
-    profile,
-    rangeModel,
-    rangeInfo,
-    position,
-    context,
-  });
-  // Policy precedence for the base strategy: exact-CFR solved table > distilled
-  // GTO (generalizes to unseen boards) > trained/heuristic. The line-pressure
-  // exploit then layers on top of whichever base, so a GTO baseline is preserved
-  // when there is no weak-line signal but weak lines are still punished.
-  const solvedActions = lookupSolvedActions({
-    board,
-    position,
-    toCall: metrics.toCall,
-    pot: metrics.pot,
-    hero,
-  });
-  const distilledRiverActions = solvedActions
+  const trained = multiwayPostflop
+    ? null
+    : applyTrainedPolicy({
+        actions: heuristicActions,
+        board,
+        equity: equityResult.equity,
+        equityHistogram,
+        metrics,
+        profile,
+        rangeModel,
+        rangeInfo,
+        position,
+        context,
+      });
+  // The solved and distilled artifacts are heads-up subgames. Multiway postflop
+  // spots stay on the explicitly labelled range/equity approximation until a
+  // multiway solver artifact exists; applying a HU equilibrium there is invalid.
+  const solvedActions = multiwayPostflop
+    ? null
+    : lookupSolvedActions({
+        board,
+        position,
+        toCall: metrics.toCall,
+        pot: metrics.pot,
+        hero,
+      });
+  const distilledRiverActions = solvedActions || multiwayPostflop
     ? null
     : distilledOpenActions({
         hero,
@@ -731,7 +736,7 @@ export function recommendStrategy({
         metrics,
         position,
       });
-  const distilledTurned = solvedActions || distilledRiverActions
+  const distilledTurned = multiwayPostflop || solvedActions || distilledRiverActions
     ? null
     : distilledTurnActions({
         hero,
@@ -742,7 +747,7 @@ export function recommendStrategy({
         metrics,
         position,
       });
-  const distilledFlopped = solvedActions || distilledRiverActions || distilledTurned
+  const distilledFlopped = multiwayPostflop || solvedActions || distilledRiverActions || distilledTurned
     ? null
     : distilledFlopActions({
         hero,
@@ -767,21 +772,23 @@ export function recommendStrategy({
     rangeModel,
     lineProfile,
   });
-  const policySource = solvedActions
-    ? { type: "solved", version: solvedRiverArtifact.version }
-    : distilledActions
-      ? { type: "distilled", version: (distilledRiverActions ? distilledPolicyArtifact : distilledTurned ? distilledTurnArtifact : distilledFlopArtifact).version }
-      : trained
-      ? {
-          type: "trained",
-          version: trained.artifact.version,
-          artifactId: trained.artifact.artifactId,
-          blend: trained.artifact.blend,
-          validation: trained.artifact.validation,
-        }
-      : profile.street === "preflop"
-        ? { type: "preflop", version: PREFLOP_POLICY_VERSION }
-        : { type: "heuristic", version: "range-role-v1" };
+  const policySource = profile.street === "preflop"
+    ? { type: "preflop", version: PREFLOP_POLICY_VERSION }
+    : multiwayPostflop
+      ? { type: "multiway", version: "multiway-range-equity-v1", equilibrium: false }
+      : solvedActions
+        ? { type: "solved", version: solvedRiverArtifact.version }
+        : distilledActions
+          ? { type: "distilled", version: (distilledRiverActions ? distilledPolicyArtifact : distilledTurned ? distilledTurnArtifact : distilledFlopArtifact).version }
+          : trained
+            ? {
+                type: "trained",
+                version: trained.artifact.version,
+                artifactId: trained.artifact.artifactId,
+                blend: trained.artifact.blend,
+                validation: trained.artifact.validation,
+              }
+            : { type: "heuristic", version: "range-role-v1" };
   const baseSizing = chooseSizing({
     board,
     metrics,

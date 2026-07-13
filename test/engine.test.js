@@ -451,6 +451,8 @@ const flopCheckOption = recommendStrategy({
   pot: 6,
   toCall: 0,
   stackBb: 95,
+  tableSize: 2,
+  opponents: 1,
   iterations: 300,
   rng: mulberry32(14),
 });
@@ -476,6 +478,8 @@ const dryBoardBlockerBluff = recommendStrategy({
   pot: 6,
   toCall: 0,
   stackBb: 95,
+  tableSize: 2,
+  opponents: 1,
   rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "single-raised", tableSize: 2 }),
   iterations: 500,
   rng: mulberry32(17),
@@ -499,6 +503,8 @@ const wetBoardLowAir = recommendStrategy({
   pot: 6,
   toCall: 0,
   stackBb: 95,
+  tableSize: 2,
+  opponents: 1,
   rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "single-raised", tableSize: 2 }),
   iterations: 500,
   rng: mulberry32(18),
@@ -514,6 +520,8 @@ const semiBluffRaise = recommendStrategy({
   pot: 8,
   toCall: 4,
   stackBb: 92,
+  tableSize: 2,
+  opponents: 1,
   rangeWeights: buildRangeWeights({ style: "balanced", position: "BTN", context: "facing-bet", tableSize: 2 }),
   iterations: 500,
   rng: mulberry32(19),
@@ -530,12 +538,15 @@ const weakLineRiverBluff = recommendStrategy({
   pot: 3.1,
   toCall: 0.6,
   stackBb: 98,
+  tableSize: 6,
+  opponents: 1,
   rangeWeights: buildRangeWeights({ style: "balanced", position: "CO", context: "facing-raise", tableSize: 6 }),
   iterations: 700,
   rng: mulberry32(2103),
   lineProfile: { weakProbe: true, passiveOpponentLine: true, previousChecks: 2, previousAggression: 0, currentBetFraction: 0.24, passiveScore: 0.9 },
 });
 assert.ok(raiseFrequency(weakLineRiverBluff) > 0.14, `weak-line bluff raise ${raiseFrequency(weakLineRiverBluff)}`);
+assert.equal(weakLineRiverBluff.policySource.type, "multiway");
 assert.ok(weakLineRiverBluff.reasons.some((reason) => reason.includes("弱线小注")));
 
 const riverPolarSizing = recommendStrategy({
@@ -546,6 +557,8 @@ const riverPolarSizing = recommendStrategy({
   pot: 12,
   toCall: 0,
   stackBb: 100,
+  tableSize: 2,
+  opponents: 1,
   iterations: 300,
   rng: mulberry32(15),
 });
@@ -560,6 +573,8 @@ const lowSprSizing = recommendStrategy({
   pot: 36,
   toCall: 0,
   stackBb: 16,
+  tableSize: 2,
+  opponents: 1,
   iterations: 300,
   rng: mulberry32(16),
 });
