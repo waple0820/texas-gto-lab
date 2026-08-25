@@ -135,6 +135,7 @@ const table = {
   smallBlindId: null,
   bigBlindId: null,
   acted: new Set(),
+  contrib: new Map(),
   actions: [],
   reviews: [],
   chat: [],
@@ -430,6 +431,7 @@ function startHand(players) {
   table.pot = 0;
   table.currentBet = 0;
   table.acted = new Set();
+  table.contrib = new Map();
   table.actions = [];
   table.reviews = [];
   table.log = [];
@@ -488,6 +490,10 @@ function commit(player, amount) {
   player.stack = round(player.stack - paid, 1);
   player.streetBet = round(player.streetBet + paid, 1);
   player.totalBet = round(player.totalBet + paid, 1);
+  // Hand-scoped contribution ledger: pot math reads THIS, not the seat list,
+  // so a player removed mid-hand (leave/disconnect) can never take their
+  // contribution out of the pot accounting.
+  table.contrib.set(player.id, round((table.contrib.get(player.id) || 0) + paid, 1));
   table.pot = round(table.pot + paid, 1);
   if (player.stack <= 0.01) player.allIn = true;
   return paid;
@@ -673,11 +679,19 @@ function runoutAndShowdown() {
 }
 
 function potEntries() {
-  return activePlayers().map((player) => ({
-    id: player.id,
-    contributed: player.totalBet,
-    folded: player.folded,
-  }));
+  // Built from the contribution ledger, not the seat list: a contributor who
+  // was removed mid-hand still has an entry (as folded dead money), so chips
+  // can never vanish from the pot math. If the departed player was the top
+  // contributor, applyUncalledRefund() finds no seat to refund and the
+  // buildPots() residue guard folds the excess into the last pot instead.
+  return [...table.contrib.entries()].map(([id, contributed]) => {
+    const player = getPlayer(id);
+    return {
+      id,
+      contributed,
+      folded: !player || !player.inHand || player.folded,
+    };
+  });
 }
 
 // Return the final bettor's uncalled excess (the part of their last bet/raise
@@ -690,6 +704,7 @@ function applyUncalledRefund() {
   if (!player) return;
   player.stack = round(player.stack + refund.amount, 1);
   player.totalBet = round(player.totalBet - refund.amount, 1);
+  table.contrib.set(player.id, round((table.contrib.get(player.id) || 0) - refund.amount, 1));
   table.pot = round(table.pot - refund.amount, 1);
 }
 
@@ -715,20 +730,36 @@ function showdown() {
   // contribution covers that layer, so a short all-in can never win more than
   // their entitlement and deep stacks contest the overflow among themselves.
   const pots = buildPots(potEntries());
+  // Odd-chip rule: within each pot, order tied winners starting left of the
+  // dealer, so the 0.1bb remainder rotates with the button instead of always
+  // landing on the earliest-joined seat.
+  const seatOrder = activePlayers();
+  const dealerSeat = table.dealerIndex >= 0 ? table.dealerIndex : 0;
+  const seatRank = new Map(seatOrder.map((player, index) => [
+    player.id,
+    (index - dealerSeat - 1 + seatOrder.length) % seatOrder.length,
+  ]));
   const wonById = new Map();
   for (const pot of pots) {
     const rows = pot.eligible.map((id) => solvedById.get(id)).filter(Boolean);
     if (!rows.length) continue;
     const best = compareSolvedHands(rows.map((item) => item.solved));
-    const potWinners = rows.filter((item) => best.includes(item.solved));
+    const potWinners = rows
+      .filter((item) => best.includes(item.solved))
+      .sort((a, b) => (seatRank.get(a.player.id) ?? 99) - (seatRank.get(b.player.id) ?? 99));
     for (const share of splitPot(pot.amount, potWinners.map((item) => item.player.id))) {
       wonById.set(share.id, round((wonById.get(share.id) || 0) + share.amount, 1));
     }
   }
 
-  const winnerRows = solved.filter((item) => (wonById.get(item.player.id) || 0) > 0);
+  // wonById membership = chopped/won a pot (possibly a 0.0 share from the
+  // odd-chip rule) — display must show a tie as a win even when the share
+  // rounds to nothing; stacks only move for positive amounts.
+  const winnerRows = solved.filter((item) => wonById.has(item.player.id));
   for (const row of winnerRows) {
-    row.player.stack = round(row.player.stack + wonById.get(row.player.id), 1);
+    if ((wonById.get(row.player.id) || 0) > 0) {
+      row.player.stack = round(row.player.stack + wonById.get(row.player.id), 1);
+    }
   }
   table.winners = winnerRows.map((row) => ({
     id: row.player.id,
@@ -742,7 +773,7 @@ function showdown() {
     id: item.player.id,
     hand: item.solved.descr,
     rank: item.solved.name,
-    won: (wonById.get(item.player.id) || 0) > 0,
+    won: wonById.has(item.player.id),
     amount: wonById.get(item.player.id) || 0,
   }));
   const sidePotNote = pots.length > 1 ? `（${pots.length} 个池）` : "";

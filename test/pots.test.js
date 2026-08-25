@@ -100,6 +100,19 @@ assert.deepEqual(
   assert.equal(total(pots), 24);
 }
 
+// Review repro (PR #103): a contributor who LEAVES mid-hand stays in the
+// entries as folded dead money — their 60bb must remain in the awarded total
+// instead of vanishing when the seat is removed.
+{
+  const pots = buildPots([
+    { id: "a", contributed: 100, folded: false },
+    { id: "leaver", contributed: 60, folded: true },
+    { id: "d", contributed: 100, folded: false },
+  ]);
+  assert.equal(total(pots), 260);
+  assert.deepEqual(pots[0].eligible.sort(), ["a", "d"]);
+}
+
 // --- splitPot ---
 
 assert.deepEqual(splitPot(10, ["a", "b"]), [

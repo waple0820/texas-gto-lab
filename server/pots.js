@@ -1,15 +1,18 @@
 // Pure pot math for the multiplayer table: uncalled-bet refunds and layered
 // side pots. Kept free of table state so it can be unit-tested directly
-// (server/index.js starts listening on import, so game math lives here).
+// (server/index.js starts listening on import, so game math lives here;
+// src/poker-core.js is side-effect-free and safe to import).
 //
 // All amounts are in bb at 0.1 granularity, matching commit()/round(x, 1)
 // in server/index.js. Every function is conservation-safe: chips out equal
 // chips in, with any odd 0.1 remainder assigned deterministically.
 
+import { round } from "../src/poker-core.js";
+
 const EPS = 1e-9;
 
 function round1(value) {
-  return Math.round(value * 10) / 10;
+  return round(value, 1);
 }
 
 // entries: [{ id, contributed, folded }] — full-hand contribution per player
