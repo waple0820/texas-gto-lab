@@ -1677,6 +1677,17 @@ function preflopActionMix(handCode, me) {
 // Cache holds the mix map for one spot; `computing` is the sig currently solving.
 const mpRangeStrat = { sig: null, mix: null, computing: null };
 
+// Live (unfolded, in-hand) opponents from the hero's perspective. This count
+// gates the engine's HU-equilibrium vs multiway-approximation choice, so the
+// sweep must pass the real number and the cache must key on it — a mid-street
+// fold that turns the pot heads-up is a different spot.
+function mpLiveOpponents(state, me) {
+  const live = (state?.players || []).filter(
+    (player) => player.inHand && !player.folded && player.id !== me?.id,
+  ).length;
+  return Math.max(1, live);
+}
+
 // A spot fingerprint: same board/position/context/pot/toCall → reuse the solve.
 function mpRangeSpotSig(state, me) {
   return [
@@ -1686,6 +1697,7 @@ function mpRangeSpotSig(state, me) {
     Math.round(Number(state.pot) || 0),
     Math.round(Number(me.toCall) || 0),
     Math.round(Number(me.stackBb) || 0),
+    mpLiveOpponents(state, me),
   ].join("|");
 }
 
@@ -1770,7 +1782,7 @@ async function solveMpRangeStrategy(state, me, sig, weights) {
         pot,
         toCall,
         currentBet: state.currentBet ?? toCall,
-        opponents: 1,
+        opponents: mpLiveOpponents(state, me),
         rangeWeights: weights,
         iterations: 120,
       });

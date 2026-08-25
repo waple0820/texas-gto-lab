@@ -713,13 +713,22 @@ export function recommendStrategy({
   pot = 6,
   toCall = 0,
   currentBet = toCall,
-  opponents = 1,
+  // Fail CLOSED: `opponents` (live, unfolded) gates the HU-equilibrium
+  // policies, so an omitted count must default to "everyone dealt in is
+  // still live" — a caller has to say a pot is heads-up to get HU GTO.
+  opponents = Math.max(1, tableSize - 1),
   rangeStyle = "balanced",
   rangeWeights,
   iterations = 1200,
   rng = Math.random,
   lineProfile = null,
 } = {}) {
+  // Same fail-closed rule for garbage values (0, NaN, negatives): treat them
+  // as "count unknown" rather than letting them slip past the multiway guard.
+  const liveOpponents =
+    Number.isFinite(opponents) && opponents >= 1
+      ? Math.round(opponents)
+      : Math.max(1, tableSize - 1);
   const activeRange =
     rangeWeights ||
     buildRangeWeights({
@@ -733,17 +742,19 @@ export function recommendStrategy({
     hero,
     board,
     rangeWeights: activeRange,
-    opponents,
+    opponents: liveOpponents,
     iterations,
     rng,
   });
   const profile = analyzeMadeHand(hero, board);
   // "Multiway" means 2+ LIVE opponents in the pot, not 2+ seats dealt in.
   // `opponents` is the live-opponent count (the battle table passes unfolded
-  // players; the lab passes the user's setting), while `tableSize` is only the
-  // preflop table format. A 6-max hand that reaches the flop heads-up IS a
-  // heads-up subgame, so the solved/distilled policies apply there.
-  const multiwayPostflop = profile.street !== "preflop" && opponents > 1;
+  // players; the lab passes the user's setting). `tableSize` never gates the
+  // HU policies — it still shapes the preflop charts and, when rangeWeights is
+  // omitted, the default opponent range model. A 6-max hand that reaches the
+  // flop heads-up IS a heads-up subgame, so the solved/distilled policies
+  // apply there.
+  const multiwayPostflop = profile.street !== "preflop" && liveOpponents > 1;
   const metrics = computeDecisionMetrics({
     equity: equityResult.equity,
     pot,

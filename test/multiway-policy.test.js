@@ -65,28 +65,22 @@ const sameTurnHeadsUp = recommend({
 });
 assert.equal(sameTurnHeadsUp.policySource.type, "distilled");
 
-const canonicalRiverHeadsUp = recommend({
+// One shared canonical solved-river spot: the board must stay inside the
+// solved artifact's coverage, so every case derives from this object instead
+// of repeating the literals (a regenerated artifact then needs one edit).
+const canonicalRiverSpot = {
   hero: ["As", "Ah"],
   board: ["Qc", "Jd", "9s", "4h", "2c"],
   context: "single-raised",
-  tableSize: 2,
-  opponents: 1,
   pot: 10,
   toCall: 0,
   seed: 91,
-});
+};
+
+const canonicalRiverHeadsUp = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1 });
 assert.equal(canonicalRiverHeadsUp.policySource.type, "solved");
 
-const canonicalRiverMultiway = recommend({
-  hero: ["As", "Ah"],
-  board: ["Qc", "Jd", "9s", "4h", "2c"],
-  context: "single-raised",
-  tableSize: 3,
-  opponents: 2,
-  pot: 10,
-  toCall: 0,
-  seed: 91,
-});
+const canonicalRiverMultiway = recommend({ ...canonicalRiverSpot, tableSize: 3, opponents: 2 });
 assert.equal(canonicalRiverMultiway.policySource.type, "multiway");
 assert.notEqual(canonicalRiverMultiway.policySource.type, "solved");
 
@@ -118,16 +112,15 @@ const sixMaxHeadsUpFlop = recommend({
 });
 assert.equal(sixMaxHeadsUpFlop.policySource.type, "distilled");
 
-const sixMaxHeadsUpCanonicalRiver = recommend({
-  hero: ["As", "Ah"],
-  board: ["Qc", "Jd", "9s", "4h", "2c"],
-  context: "single-raised",
-  tableSize: 6,
-  opponents: 1,
-  pot: 10,
-  toCall: 0,
-  seed: 91,
-});
+const sixMaxHeadsUpCanonicalRiver = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: 1 });
 assert.equal(sixMaxHeadsUpCanonicalRiver.policySource.type, "solved");
+
+// Fail-closed defaults: with the live-opponent count omitted (or garbage), a
+// 6-max postflop query must resolve to the multiway approximation — a caller
+// has to state a pot is heads-up to receive HU equilibrium output.
+const omittedOpponents = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: undefined });
+assert.equal(omittedOpponents.policySource.type, "multiway");
+const garbageOpponents = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: 0 });
+assert.equal(garbageOpponents.policySource.type, "multiway");
 
 console.log("multiway policy boundary tests passed");
