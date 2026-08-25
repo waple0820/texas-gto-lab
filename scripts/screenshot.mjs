@@ -27,6 +27,9 @@ try {
   page.setDefaultTimeout(8000);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1300);
+  // First-visit welcome overlay intercepts all clicks — dismiss it.
+  await page.click("#welcome-skip", { timeout: 1500 }).catch(() => {});
+  await page.waitForTimeout(300);
   if (view !== "lab") {
     await page.click(`[data-tab="${view}"]`);
     await page.waitForTimeout(400);

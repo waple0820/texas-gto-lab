@@ -654,17 +654,26 @@ function validateLabInputs(inputs) {
   return "";
 }
 
+// Dim the previous spot's numbers whenever validation fails, so a warning is
+// never displayed next to fresh-looking (but stale) results.
+function markResultsStale(stale) {
+  document.querySelector(".output-panel")?.classList.toggle("is-stale", stale);
+}
+
 async function runCalculation() {
   if (labState.hero.length !== 2) {
+    markResultsStale(true);
     setStatus("需要两张手牌", "warn");
     return;
   }
   if (![0, 3, 4, 5].includes(labState.board.length)) {
+    markResultsStale(true);
     setStatus("公共牌数量需要是 0 / 3 / 4 / 5", "warn");
     return;
   }
   const validation = validateCards([...labState.hero, ...labState.board]);
   if (!validation.ok) {
+    markResultsStale(true);
     setStatus(`重复牌: ${validation.duplicates.join(", ")}`, "warn");
     return;
   }
@@ -676,6 +685,7 @@ async function runCalculation() {
     const inputs = readLabInputs();
     const inputError = validateLabInputs(inputs);
     if (inputError) {
+      markResultsStale(true);
       setStatus(inputError, "warn");
       return;
     }
@@ -686,8 +696,10 @@ async function runCalculation() {
       rangeWeights: ensureRange(),
     });
     renderRecommendation(result);
+    markResultsStale(false);
     setStatus("已更新", "ok");
   } catch (error) {
+    markResultsStale(true);
     setStatus(error.message, "warn");
   } finally {
     $("#run-calc").disabled = false;
