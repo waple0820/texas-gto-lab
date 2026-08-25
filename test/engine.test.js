@@ -616,7 +616,32 @@ const weakLineRiverBluff = recommendStrategy({
   lineProfile: { weakProbe: true, passiveOpponentLine: true, previousChecks: 2, previousAggression: 0, currentBetFraction: 0.24, passiveScore: 0.9 },
 });
 assert.ok(raiseFrequency(weakLineRiverBluff) > 0.14, `weak-line bluff raise ${raiseFrequency(weakLineRiverBluff)}`);
-assert.equal(weakLineRiverBluff.policySource.type, "multiway");
+// opponents:1 makes this a heads-up pot regardless of the 6-max format, so with
+// distillation disabled (this suite) it resolves to the trained HU policy, not
+// the multiway approximation.
+assert.equal(weakLineRiverBluff.policySource.type, "trained");
+
+// The exploit layer must also lift raise pressure on the MULTIWAY branch,
+// which composes with the heuristic base rather than the trained policy —
+// keep both branches covered.
+const weakLineMultiway = recommendStrategy({
+  hero: ["5c", "7h"],
+  board: ["6s", "9c", "Qs", "Jh", "Qc"],
+  position: "CO",
+  context: "facing-raise",
+  pot: 3.1,
+  toCall: 0.6,
+  stackBb: 98,
+  tableSize: 3,
+  opponents: 2,
+  rangeWeights: buildRangeWeights({ style: "balanced", position: "CO", context: "facing-raise", tableSize: 3 }),
+  iterations: 700,
+  rng: mulberry32(2103),
+  lineProfile: { weakProbe: true, passiveOpponentLine: true, previousChecks: 2, previousAggression: 0, currentBetFraction: 0.24, passiveScore: 0.9 },
+});
+assert.equal(weakLineMultiway.policySource.type, "multiway");
+assert.ok(raiseFrequency(weakLineMultiway) > 0.14, `multiway weak-line bluff raise ${raiseFrequency(weakLineMultiway)}`);
+assert.ok(weakLineMultiway.reasons.some((reason) => reason.includes("弱线小注")));
 assert.ok(weakLineRiverBluff.reasons.some((reason) => reason.includes("弱线小注")));
 
 const riverPolarSizing = recommendStrategy({

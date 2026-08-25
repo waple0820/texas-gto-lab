@@ -60,6 +60,14 @@ for (const node of spec.nodes) {
       pot: node.pot,
       toCall: node.toCall,
       stackBb: spec.stackBb,
+      // Heads-up subgame. `opponents: 1` is what keeps the engine's multiway
+      // guard off (the guard keys on live opponents; tableSize never gates it).
+      // `tableSize: 2` states the table format explicitly so the fail-closed
+      // default (opponents = tableSize - 1) stays heads-up even if a future
+      // edit drops the opponents field. Historically this call omitted
+      // tableSize while the guard still keyed on it, so the harness measured
+      // the heuristic instead of the shipped GTO path (27% vs ~0.14% pot).
+      tableSize: 2,
       opponents: 1,
       rangeWeights: fullRange,
       iterations: spec.iterations,
