@@ -1876,14 +1876,33 @@ function visualSeatSlots(state) {
   const physicalSlots = Array.from({ length: 6 }, (_, index) => players[index] || null);
   const meIndex = physicalSlots.findIndex((player) => player?.id === state?.me?.id);
   if (meIndex < 0) return physicalSlots.map((player, index) => ({ player, physicalIndex: index }));
-  const heroSlot = 3;
-  return physicalSlots.map((_, visualIndex) => {
-    const physicalIndex = (meIndex + visualIndex - heroSlot + physicalSlots.length) % physicalSlots.length;
-    return {
-      player: physicalSlots[physicalIndex],
-      physicalIndex,
-    };
+
+  // Hero is pinned to the bottom-center anchor (visual index 3). The other
+  // OCCUPIED seats are spread evenly around the oval — preserving their
+  // clockwise order relative to the hero — instead of keeping raw adjacency,
+  // which piled a 3-handed table onto one side of the felt. Anchors clockwise
+  // from the hero's left: 4 (left-bottom), 5 (left-top), 0 (top),
+  // 1 (right-top), 2 (right-bottom).
+  const anchorsCW = [4, 5, 0, 1, 2];
+  const others = [];
+  for (let step = 1; step < physicalSlots.length; step += 1) {
+    const physicalIndex = (meIndex + step) % physicalSlots.length;
+    if (physicalSlots[physicalIndex]) others.push(physicalIndex);
+  }
+  const visual = Array.from({ length: 6 }, () => null);
+  visual[3] = { player: physicalSlots[meIndex], physicalIndex: meIndex };
+  others.forEach((physicalIndex, order) => {
+    const anchor = anchorsCW[Math.floor(((order + 1) * anchorsCW.length) / (others.length + 1))];
+    visual[anchor] = { player: physicalSlots[physicalIndex], physicalIndex };
   });
+  // Remaining anchors show the unoccupied physical seats, in order.
+  const emptyPhysical = physicalSlots
+    .map((player, index) => (player ? null : index))
+    .filter((index) => index !== null);
+  for (let anchor = 0; anchor < visual.length; anchor += 1) {
+    if (!visual[anchor]) visual[anchor] = { player: null, physicalIndex: emptyPhysical.shift() ?? anchor };
+  }
+  return visual;
 }
 
 function renderMpSeats(state) {
