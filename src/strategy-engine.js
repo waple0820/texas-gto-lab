@@ -738,7 +738,12 @@ export function recommendStrategy({
     rng,
   });
   const profile = analyzeMadeHand(hero, board);
-  const multiwayPostflop = profile.street !== "preflop" && (tableSize > 2 || opponents > 1);
+  // "Multiway" means 2+ LIVE opponents in the pot, not 2+ seats dealt in.
+  // `opponents` is the live-opponent count (the battle table passes unfolded
+  // players; the lab passes the user's setting), while `tableSize` is only the
+  // preflop table format. A 6-max hand that reaches the flop heads-up IS a
+  // heads-up subgame, so the solved/distilled policies apply there.
+  const multiwayPostflop = profile.street !== "preflop" && opponents > 1;
   const metrics = computeDecisionMetrics({
     equity: equityResult.equity,
     pot,

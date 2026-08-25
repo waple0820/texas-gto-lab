@@ -60,6 +60,11 @@ for (const node of spec.nodes) {
       pot: node.pot,
       toCall: node.toCall,
       stackBb: spec.stackBb,
+      // Heads-up subgame: 1 live opponent, HU table format. Without these the
+      // engine's multiway guard used to disable the solved/distilled policies,
+      // which made this harness measure the heuristic instead of the shipped
+      // GTO path (27% pot instead of ~0.14%).
+      tableSize: 2,
       opponents: 1,
       rangeWeights: fullRange,
       iterations: spec.iterations,

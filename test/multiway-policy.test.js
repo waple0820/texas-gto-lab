@@ -103,4 +103,31 @@ const sixMaxPreflop = recommend({
 });
 assert.equal(sixMaxPreflop.policySource.type, "preflop");
 
+// A 6-max hand that reaches the flop with ONE live opponent is a heads-up
+// subgame: the GTO policies must fire. Guarding on seats-dealt-in used to
+// silently disable solved/distilled everywhere on the 6-max battle table.
+const sixMaxHeadsUpFlop = recommend({
+  hero: ["As", "Ah"],
+  board: ["2c", "7d", "9h"],
+  context: "single-raised",
+  tableSize: 6,
+  opponents: 1,
+  pot: 6,
+  toCall: 0,
+  seed: 7,
+});
+assert.equal(sixMaxHeadsUpFlop.policySource.type, "distilled");
+
+const sixMaxHeadsUpCanonicalRiver = recommend({
+  hero: ["As", "Ah"],
+  board: ["Qc", "Jd", "9s", "4h", "2c"],
+  context: "single-raised",
+  tableSize: 6,
+  opponents: 1,
+  pot: 10,
+  toCall: 0,
+  seed: 91,
+});
+assert.equal(sixMaxHeadsUpCanonicalRiver.policySource.type, "solved");
+
 console.log("multiway policy boundary tests passed");

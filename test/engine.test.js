@@ -616,7 +616,10 @@ const weakLineRiverBluff = recommendStrategy({
   lineProfile: { weakProbe: true, passiveOpponentLine: true, previousChecks: 2, previousAggression: 0, currentBetFraction: 0.24, passiveScore: 0.9 },
 });
 assert.ok(raiseFrequency(weakLineRiverBluff) > 0.14, `weak-line bluff raise ${raiseFrequency(weakLineRiverBluff)}`);
-assert.equal(weakLineRiverBluff.policySource.type, "multiway");
+// opponents:1 makes this a heads-up pot regardless of the 6-max format, so with
+// distillation disabled (this suite) it resolves to the trained HU policy, not
+// the multiway approximation.
+assert.equal(weakLineRiverBluff.policySource.type, "trained");
 assert.ok(weakLineRiverBluff.reasons.some((reason) => reason.includes("弱线小注")));
 
 const riverPolarSizing = recommendStrategy({
