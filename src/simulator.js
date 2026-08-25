@@ -171,7 +171,7 @@ export class HoldemSimulator {
       position: this.street === "preflop" ? "BB" : "BB",
       context,
       tableSize: 2,
-      stackBb: Math.max(1, this.aiStack),
+      stackBb: Math.max(1, Math.min(this.aiStack, this.heroStack)),
     });
     const recommendation = recommendStrategy({
       hero: this.aiHole,
@@ -179,7 +179,9 @@ export class HoldemSimulator {
       position: "BB",
       context,
       tableSize: 2,
-      stackBb: Math.max(1, this.aiStack),
+      // effective stack (min of both) — the same value the hero-side review
+      // passes, so both seats are graded against the same depth regime
+      stackBb: Math.max(1, Math.min(this.aiStack, this.heroStack)),
       pot: this.pot,
       toCall,
       currentBet: this.currentBet,

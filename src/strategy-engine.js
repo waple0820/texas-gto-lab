@@ -826,6 +826,7 @@ export function recommendStrategy({
         position,
         toCall: metrics.toCall,
         pot: metrics.pot,
+        stackBb: metrics.effectiveStack,
         hero,
       });
   const distilledRiverActions = solvedActions || multiwayPostflop

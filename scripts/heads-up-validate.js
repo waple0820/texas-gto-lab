@@ -63,7 +63,10 @@ function actorHole(sim, actor) {
 }
 
 function actorStack(sim, actor) {
-  return actor === "hero" ? sim.heroStack : sim.aiStack;
+  // effective stack: both actors are graded at min(hero, ai) so the policy
+  // source recorded per row reflects the spot, not which seat is acting
+  void actor;
+  return Math.min(sim.heroStack, sim.aiStack);
 }
 
 function recommendForActor(sim, actor, profile, args) {

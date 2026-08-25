@@ -1003,6 +1003,20 @@ function sanitizeChat(value) {
     .slice(0, 180);
 }
 
+// Effective stack for strategy decisions: chips the player can actually win
+// or lose this hand — own stack capped by the deepest LIVE opponent. The
+// solved-policy depth gate keys on this, so passing the raw own stack would
+// grade the same physical node differently per seat.
+function effectiveStackFor(player) {
+  const liveOpponents = activePlayers().filter(
+    (seat) => seat.id !== player.id && !seat.folded,
+  );
+  const deepest = liveOpponents.length
+    ? Math.max(...liveOpponents.map((seat) => seat.stack + seat.streetBet))
+    : player.stack;
+  return Math.max(1, round(Math.min(player.stack, deepest), 1));
+}
+
 function recommendFor(player) {
   const toCall = toCallFor(player);
   const position = positionFor(player);
@@ -1012,7 +1026,7 @@ function recommendFor(player) {
     position,
     context,
     tableSize: activePlayers().length,
-    stackBb: Math.max(1, player.stack),
+    stackBb: effectiveStackFor(player),
   });
   return recommendStrategy({
     hero: player.hole,
@@ -1020,7 +1034,7 @@ function recommendFor(player) {
     position,
     context,
     tableSize: activePlayers().length,
-    stackBb: Math.max(1, player.stack),
+    stackBb: effectiveStackFor(player),
     pot: table.pot,
     toCall,
     currentBet: table.currentBet,
@@ -1285,7 +1299,7 @@ function publicState(forPlayer = null) {
           position: forPlayer.inHand ? positionFor(forPlayer) : null,
           context: forPlayer.inHand ? contextFor(forPlayer, toCallFor(forPlayer)) : null,
           tableSize: activePlayers().length,
-          stackBb: Math.max(1, round(forPlayer.stack, 1)),
+          stackBb: forPlayer.inHand ? effectiveStackFor(forPlayer) : Math.max(1, round(forPlayer.stack, 1)),
         }
       : null,
   };
