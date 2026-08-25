@@ -604,6 +604,8 @@ function renderRangeMatrix() {
 }
 
 function renderLab() {
+  // any card/board mutation invalidates the rendered recommendation
+  markResultsStale(true);
   renderSlots();
   renderDeck();
   renderTargetTabs();
@@ -654,17 +656,29 @@ function validateLabInputs(inputs) {
   return "";
 }
 
+// Dim the previous spot's numbers whenever the inputs move on without a new
+// calculation, so a warning (or a different hand) never sits next to
+// fresh-looking stale results. No-op until a result has actually rendered —
+// the first-run placeholder must stay readable.
+let labHasResult = false;
+function markResultsStale(stale) {
+  $(".output-panel")?.classList.toggle("is-stale", stale && labHasResult);
+}
+
 async function runCalculation() {
   if (labState.hero.length !== 2) {
+    markResultsStale(true);
     setStatus("需要两张手牌", "warn");
     return;
   }
   if (![0, 3, 4, 5].includes(labState.board.length)) {
+    markResultsStale(true);
     setStatus("公共牌数量需要是 0 / 3 / 4 / 5", "warn");
     return;
   }
   const validation = validateCards([...labState.hero, ...labState.board]);
   if (!validation.ok) {
+    markResultsStale(true);
     setStatus(`重复牌: ${validation.duplicates.join(", ")}`, "warn");
     return;
   }
@@ -676,6 +690,7 @@ async function runCalculation() {
     const inputs = readLabInputs();
     const inputError = validateLabInputs(inputs);
     if (inputError) {
+      markResultsStale(true);
       setStatus(inputError, "warn");
       return;
     }
@@ -686,8 +701,10 @@ async function runCalculation() {
       rangeWeights: ensureRange(),
     });
     renderRecommendation(result);
+    markResultsStale(false);
     setStatus("已更新", "ok");
   } catch (error) {
+    markResultsStale(true);
     setStatus(error.message, "warn");
   } finally {
     $("#run-calc").disabled = false;
@@ -714,6 +731,7 @@ function renderPolicySource(policySource) {
 }
 
 function renderRecommendation(result) {
+  labHasResult = true;
   $("#sample-count").textContent = `${result.equity.iterations} samples`;
   renderPolicySource(result.policySource);
   // hero callout — the GTO-preferred action, consistent with the battle decision station
@@ -2601,6 +2619,9 @@ function wireEvents() {
   });
 
   $("#run-calc").addEventListener("click", runCalculation);
+  // any parameter tweak invalidates the rendered recommendation too
+  document.querySelector(".controls-panel")?.addEventListener("input", () => markResultsStale(true));
+  document.querySelector(".controls-panel")?.addEventListener("change", () => markResultsStale(true));
   $("#random-scenario").addEventListener("click", randomScenario);
   $("#reset-cards").addEventListener("click", resetCards);
   $("#practice-next").addEventListener("click", generatePracticeQuestion);
