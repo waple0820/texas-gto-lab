@@ -136,6 +136,7 @@ const table = {
   bigBlindId: null,
   acted: new Set(),
   contrib: new Map(),
+  lastRaiseSize: BIG_BLIND,
   actions: [],
   reviews: [],
   chat: [],
@@ -430,6 +431,7 @@ function startHand(players) {
   table.street = "preflop";
   table.pot = 0;
   table.currentBet = 0;
+  table.lastRaiseSize = BIG_BLIND;
   table.acted = new Set();
   table.contrib = new Map();
   table.actions = [];
@@ -513,64 +515,126 @@ function actionDisplayLabel(action, fallback) {
 
 function handlePlayerAction(player, action) {
   if (table.phase !== "playing" || table.turnId !== player.id || player.folded || player.allIn) return;
-  const actionCount = table.actions.length;
-  const review = buildReview(player, action);
-  applyAction(player, action);
-  if (table.actions.length > actionCount && review) recordReview(player, review, table.actions.at(-1));
+  // Cheap legality check FIRST — buildReview runs a full Monte Carlo strategy
+  // solve, so validating after it would let invalid-action spam burn a solve
+  // per message while the turn (correctly) never advances.
+  let acted = action;
+  let plan = planAction(player, action);
+  if (!plan && player.type === "ai") {
+    // A bot must never stall the table: an unplayable pick degrades to the
+    // always-legal check/call.
+    acted = "check-call";
+    plan = planAction(player, acted);
+  }
+  if (!plan) {
+    // Invalid action: the turn does NOT advance. Previously an unknown action
+    // id (or a fold with nothing to call) was a silent no-op that still passed
+    // the turn on — a free pass out of paying the bet.
+    if (player.socket) send(player.socket, { type: "error", message: "无效操作：请从当前可选动作中选择" });
+    return;
+  }
+  const review = buildReview(player, acted);
+  executeAction(player, acted, plan);
+  if (review) recordReview(player, review, table.actions.at(-1));
   if (table.phase === "playing") advanceTurnOrStreet(player);
   broadcast();
   queueAiIfNeeded();
 }
 
-function applyAction(player, action) {
+// Pot-fraction defaults for bet ids when the client sends no explicit size.
+const BET_FRACTIONS = { third: 0.33, half: 0.5, "two-thirds": 0.66, pot: 1, overbet: 1.25 };
+
+// Plan one action WITHOUT touching table state. Returns a plan object for
+// executeAction, or null when the action is illegal (caller keeps the turn on
+// the player). All chip amounts live on the 0.1bb grid.
+function planAction(player, action) {
   const id = actionId(action);
   const toCall = toCallFor(player);
-  if (id === "fold" && toCall > 0) {
+  if (id === "fold") {
+    return toCall > 0 ? { kind: "fold" } : null; // nothing to fold to — check is the action
+  }
+  if (id === "check-call") {
+    return toCall > 0 ? { kind: "call", pay: Math.min(player.stack, toCall) } : { kind: "check" };
+  }
+
+  const allInTarget = round(player.streetBet + player.stack, 1);
+  const minIncrement = table.lastRaiseSize;
+  const minTarget = table.currentBet > 0 ? round(table.currentBet + minIncrement, 1) : BIG_BLIND;
+
+  let target;
+  if (id === "allin") {
+    target = allInTarget;
+  } else if (id in BET_FRACTIONS) {
+    const explicitSize = actionSize(action);
+    if (explicitSize) {
+      // Explicit size from a client. Below the table-stakes minimum it is
+      // REJECTED, not silently inflated — clamping up committed more chips
+      // than the button displayed (and could even force an unintended
+      // all-in when minTarget exceeded the stack).
+      target = table.street === "preflop" || toCall > 0 ? explicitSize : round(table.currentBet + explicitSize, 1);
+      if (target < minTarget && target < allInTarget) return null;
+    } else {
+      // Server-derived pot-fraction sizing (bot fallback path): clamp to the
+      // legal minimum, it is our own number.
+      target = round(table.currentBet + Math.max(BIG_BLIND, table.pot * BET_FRACTIONS[id]), 1);
+      target = Math.max(target, minTarget);
+    }
+    target = Math.min(target, allInTarget); // stack caps every raise
+  } else {
+    return null; // unknown action id
+  }
+
+  if (target <= player.streetBet) return null; // nothing new committed
+  const raises = target > table.currentBet;
+  if (!raises && target < allInTarget) return null; // sub-call "raise" that isn't an all-in
+  // An all-in raise below the minimum increment is legal but INCOMPLETE: it
+  // does not set a new raise increment and does not reopen full raise rights.
+  const fullRaise = raises && round(target - table.currentBet, 1) >= minIncrement - 1e-9;
+  return { kind: raises ? "raise" : "allin-call", target, fullRaise };
+}
+
+// Execute a plan from planAction. Mutates table state; always succeeds.
+function executeAction(player, action, plan) {
+  if (plan.kind === "fold") {
     player.folded = true;
     table.acted.add(player.id);
     recordAction(player, "fold", "弃牌", 0);
     return;
   }
-  if (id === "check-call") {
-    if (toCall > 0) {
-      const paid = commit(player, toCall);
-      recordAction(player, "call", "跟注", paid);
-    } else {
-      recordAction(player, "check", "过牌", 0);
-    }
+  if (plan.kind === "check") {
     table.acted.add(player.id);
+    recordAction(player, "check", "过牌", 0);
     return;
   }
-  const aggressive =
-    id === "third"
-      ? 0.33
-      : id === "half"
-        ? 0.5
-        : id === "two-thirds"
-          ? 0.66
-          : id === "pot"
-            ? 1
-            : id === "overbet"
-              ? 1.25
-              : id === "allin"
-                ? "allin"
-                : null;
-  if (aggressive) {
-    const explicitSize = actionSize(action);
-    const size = aggressive === "allin" ? player.stack + toCall : explicitSize || Math.max(BIG_BLIND, table.pot * aggressive);
-    const target =
-      id === "allin"
-        ? player.streetBet + player.stack
-        : explicitSize && (table.street === "preflop" || toCall > 0)
-          ? Math.max(table.currentBet, explicitSize)
-          : table.currentBet + size;
-    const paid = commit(player, Math.max(0, target - player.streetBet));
-    table.currentBet = Math.max(table.currentBet, player.streetBet);
-    table.acted = new Set([player.id]);
-    const type = player.allIn ? "allin" : table.street === "preflop" || toCall > 0 ? "raise" : "bet";
-    const label = player.allIn ? "全压" : actionDisplayLabel(action, type === "raise" ? "加注" : "下注");
-    recordAction(player, type, label, paid);
+  if (plan.kind === "call") {
+    const paid = commit(player, plan.pay);
+    table.acted.add(player.id);
+    recordAction(player, "call", "跟注", paid);
+    return;
   }
+  // bet / raise / all-in
+  const toCall = toCallFor(player);
+  const previousBet = table.currentBet;
+  const paid = commit(player, round(plan.target - player.streetBet, 1));
+  if (player.streetBet > previousBet) {
+    table.currentBet = player.streetBet;
+    if (plan.fullRaise) {
+      // Only a FULL raise sets the new increment and reopens the action;
+      // an incomplete all-in raise leaves both untouched (players still owe
+      // the call because their streetBet no longer matches currentBet, but
+      // raise rights are not refreshed — the NLHE incomplete-raise rule).
+      table.lastRaiseSize = round(table.currentBet - previousBet, 1);
+      table.acted = new Set([player.id]);
+    } else {
+      table.acted.add(player.id);
+    }
+  } else {
+    // All-in for less than a call (or exactly a call): acts like a call.
+    table.acted.add(player.id);
+  }
+  const type = player.allIn ? "allin" : table.street === "preflop" || toCall > 0 ? "raise" : "bet";
+  const label = player.allIn ? "全压" : actionDisplayLabel(action, type === "raise" ? "加注" : "下注");
+  recordAction(player, type, label, paid);
 }
 
 function toCallFor(player) {
@@ -651,6 +715,7 @@ function nextActorAfter(playerId) {
 function advanceStreet() {
   for (const player of activePlayers()) player.streetBet = 0;
   table.currentBet = 0;
+  table.lastRaiseSize = BIG_BLIND;
   table.acted = new Set();
 
   if (table.street === "preflop") {
@@ -1269,7 +1334,11 @@ function actionOptionsFor(player) {
   const recommendation = recommendFor(player);
   const sizingOptions = standardSizingOptions(recommendation.sizing?.options || [], table.street, toCall);
   for (const option of sizingOptions) {
-    options.push(sizeButtonOption(option, toCall, table.street));
+    const button = sizeButtonOption(option, toCall, table.street);
+    // Only offer buttons the validator will accept: a sizing suggestion below
+    // the table-stakes minimum (small pots make 25%-pot < 1bb, re-raise wars
+    // outgrow chart sizes) must not render as a clickable dead end.
+    if (planAction(player, button.action) !== null) options.push(button);
   }
 
   options.push({
