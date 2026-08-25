@@ -221,13 +221,17 @@ dual-5090 host:
   sampled. **Correct** (converges under an exact enumerated turn+river BR), self-
   test passes.
 
-**Honest limit:** at deep SPR (~13, what the app plays) the *full* flop is NOT
-GPU-bound — turn-sampled MCCFR needs 10^5+ iters there (all-in utilities dwarf the
-pot, ~1/√T) and each iteration is Python-recursion + CPU sign-precompute bound, so
-the river batching doesn't dominate (GPU ≈ CPU). Deep flop targets still aren't
-feasibly converged; the flop distilled model stays gated. The river/turn batched
-cores are reusable 20x wins. Truly closing the flop needs a full tree-vectorization
-rewrite (flat scatter/gather tensors, zero per-node recursion, signs on GPU).
+**Honest limit (historical):** at deep SPR (~13, what the app plays) the *full*
+flop was NOT GPU-bound under these cores — turn-sampled MCCFR needs 10^5+ iters
+there (all-in utilities dwarf the pot, ~1/√T) and each iteration is
+Python-recursion + CPU sign-precompute bound, so the river batching doesn't
+dominate (GPU ≈ CPU). The river/turn batched cores remain reusable 20x wins.
+This limit was later broken by exactly the rewrite predicted here:
+`flop_vectorized.py` (flat scatter/gather tensors, zero per-node recursion,
+signs on GPU) converges the deep flop in seconds, and the distilled flop model
+trained on its targets (`distill-flop-v3-deep`) is **live** —
+`FLOP_DISTILL_READY = true` in `src/distilled-flop-policy.js`, validated by the
+deep-SPR A/B there.
 
 ## Stage 5 — How far is the live engine from GTO? (measured)
 
@@ -271,7 +275,12 @@ The solver now feeds the shipped engine. `scripts/solver/export_solved.py` solve
 river spots exactly and writes `src/solved-river-artifact.js` (per-combo, per-node
 equilibrium frequencies). At runtime `src/solved-policy.js` consults it, and
 `recommendStrategy` plays the solved strategy for the hero's exact combo on any
-covered spot instead of the heuristic.
+covered spot instead of the heuristic. A covered spot means board, position,
+pot/toCall node, **and stack depth**: the artifact's tree caps every line at the
+stack it was solved with, so the lookup rejects effective stacks far from the
+solved depth (outside ~0.6–1.6x of the node's remaining stack) and lets the
+SPR-conditioned distilled model handle those instead of serving one depth's
+frequencies as exact GTO everywhere.
 
 Re-running the Stage 5 measurement with the solved policy active, on the same spot
 where the heuristic was 28.7% exploitable:

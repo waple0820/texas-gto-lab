@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { buildRangeWeights, mulberry32 } from "../src/poker-core.js";
 import { recommendStrategy } from "../src/strategy-engine.js";
 
-function recommend({ hero, board, position = "BTN", context, tableSize, opponents, pot, toCall, seed }) {
+function recommend({ hero, board, position = "BTN", context, tableSize, opponents, pot, toCall, seed, stackBb = 100 }) {
   return recommendStrategy({
     hero,
     board,
@@ -10,10 +10,10 @@ function recommend({ hero, board, position = "BTN", context, tableSize, opponent
     context,
     tableSize,
     opponents,
-    stackBb: 100,
+    stackBb,
     pot,
     toCall,
-    rangeWeights: buildRangeWeights({ style: "balanced", position, context, tableSize, stackBb: 100 }),
+    rangeWeights: buildRangeWeights({ style: "balanced", position, context, tableSize, stackBb }),
     iterations: 900,
     rng: mulberry32(seed),
   });
@@ -68,6 +68,8 @@ assert.equal(sameTurnHeadsUp.policySource.type, "distilled");
 // One shared canonical solved-river spot: the board must stay inside the
 // solved artifact's coverage, so every case derives from this object instead
 // of repeating the literals (a regenerated artifact then needs one edit).
+// stackBb 20 matches the depth the artifact was solved at — the solved-policy
+// stack gate rejects far-off depths (see the deep/short pins below).
 const canonicalRiverSpot = {
   hero: ["As", "Ah"],
   board: ["Qc", "Jd", "9s", "4h", "2c"],
@@ -75,6 +77,7 @@ const canonicalRiverSpot = {
   pot: 10,
   toCall: 0,
   seed: 91,
+  stackBb: 20,
 };
 
 const canonicalRiverHeadsUp = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1 });
@@ -114,6 +117,17 @@ assert.equal(sixMaxHeadsUpFlop.policySource.type, "distilled");
 
 const sixMaxHeadsUpCanonicalRiver = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: 1 });
 assert.equal(sixMaxHeadsUpCanonicalRiver.policySource.type, "solved");
+
+// Stack-depth gate: the artifact's betting tree caps every line at the stack
+// it was solved with (20bb behind a 10bb pot). Far deeper or shallower
+// effective stacks are a different subgame — the SPR-conditioned distilled
+// model must take over rather than serving SPR-2 frequencies as "exact GTO".
+const canonicalRiverDeep = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 100 });
+assert.equal(canonicalRiverDeep.policySource.type, "distilled");
+const canonicalRiverShort = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 3 });
+assert.equal(canonicalRiverShort.policySource.type, "distilled");
+const canonicalRiverNearDepth = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 25 });
+assert.equal(canonicalRiverNearDepth.policySource.type, "solved");
 
 // Fail-closed defaults: with the live-opponent count omitted (or garbage), a
 // 6-max postflop query must resolve to the multiway approximation — a caller

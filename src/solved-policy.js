@@ -51,7 +51,28 @@ function matchNode(spot, player, pot, toCall) {
   return bestDelta <= 0.5 ? best : null;
 }
 
-export function lookupSolvedActions({ board, position, toCall = 0, pot = 0, hero } = {}) {
+// The artifact's equilibrium is only valid near the stack depth it was solved
+// at: the betting tree caps every line at spot.stack, so at a much deeper
+// effective stack the real equilibrium has raises/jams this tree cannot
+// express, and at a much shallower one its bet/jam thresholds are wrong.
+// Reconstruct the acting player's expected remaining stack at this node from
+// the tree geometry (invested = (node.pot - spot.pot - node.toCall) / 2 in a
+// heads-up subgame) and accept only when the engine's effective stack is in
+// the same regime; outside it the SPR-conditioned distilled model is the more
+// faithful policy.
+const STACK_RATIO_MIN = 0.6;
+const STACK_RATIO_MAX = 1.6;
+
+function stackMatches(spot, node, effectiveStack) {
+  if (!Number.isFinite(effectiveStack) || effectiveStack <= 0) return true; // caller opted out
+  const invested = Math.max(0, (node.pot - spot.pot - node.toCall) / 2);
+  const expected = spot.stack - invested;
+  if (expected <= 0) return true; // all-in node: nothing left to size
+  const ratio = effectiveStack / expected;
+  return ratio >= STACK_RATIO_MIN && ratio <= STACK_RATIO_MAX;
+}
+
+export function lookupSolvedActions({ board, position, toCall = 0, pot = 0, stackBb = 0, hero } = {}) {
   if (!board || board.length !== 5 || !hero || hero.length !== 2) return null;
   const spot = spotIndex.get(boardKey(board));
   if (!spot) return null;
@@ -62,6 +83,7 @@ export function lookupSolvedActions({ board, position, toCall = 0, pot = 0, hero
 
   const node = matchNode(spot, player, pot, toCall);
   if (!node) return null;
+  if (!stackMatches(spot, node, stackBb)) return null;
   const probs = node.strategy[comboKey(hero)];
   if (!probs) return null;
 
