@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { buildRangeWeights, mulberry32 } from "../src/poker-core.js";
 import { recommendStrategy } from "../src/strategy-engine.js";
+import { lookupSolvedActions } from "../src/solved-policy.js";
 
 function recommend({ hero, board, position = "BTN", context, tableSize, opponents, pot, toCall, seed, stackBb = 100 }) {
   return recommendStrategy({
@@ -68,8 +69,9 @@ assert.equal(sameTurnHeadsUp.policySource.type, "distilled");
 // One shared canonical solved-river spot: the board must stay inside the
 // solved artifact's coverage, so every case derives from this object instead
 // of repeating the literals (a regenerated artifact then needs one edit).
-// stackBb 20 matches the depth the artifact was solved at — the solved-policy
-// stack gate rejects far-off depths (see the deep/short pins below).
+// The canonical board is solved at TWO depth tiers (20bb and 90bb behind a
+// 10bb pot); the default 100bb stack sits inside the deep tier's band, so the
+// solved path stays live at the depth the app actually plays.
 const canonicalRiverSpot = {
   hero: ["As", "Ah"],
   board: ["Qc", "Jd", "9s", "4h", "2c"],
@@ -77,7 +79,6 @@ const canonicalRiverSpot = {
   pot: 10,
   toCall: 0,
   seed: 91,
-  stackBb: 20,
 };
 
 const canonicalRiverHeadsUp = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1 });
@@ -118,16 +119,47 @@ assert.equal(sixMaxHeadsUpFlop.policySource.type, "distilled");
 const sixMaxHeadsUpCanonicalRiver = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: 1 });
 assert.equal(sixMaxHeadsUpCanonicalRiver.policySource.type, "solved");
 
-// Stack-depth gate: the artifact's betting tree caps every line at the stack
-// it was solved with (20bb behind a 10bb pot). Far deeper or shallower
-// effective stacks are a different subgame — the SPR-conditioned distilled
-// model must take over rather than serving SPR-2 frequencies as "exact GTO".
-const canonicalRiverDeep = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 100 });
-assert.equal(canonicalRiverDeep.policySource.type, "distilled");
+// Stack-depth gate, end to end: depths outside every solved tier's band fall
+// through to the distilled model; depths inside a band play that tier.
 const canonicalRiverShort = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 3 });
 assert.equal(canonicalRiverShort.policySource.type, "distilled");
 const canonicalRiverNearDepth = recommend({ ...canonicalRiverSpot, tableSize: 2, opponents: 1, stackBb: 25 });
 assert.equal(canonicalRiverNearDepth.policySource.type, "solved");
+// The battle table's 6-max heads-up river at the app's real ~100bb depth must
+// hit the DEEP solved tier — this is the surface the seats-dealt-in guard bug
+// originally broke, re-pinned here at the depth it actually plays.
+const canonicalRiverDeep = recommend({ ...canonicalRiverSpot, tableSize: 6, opponents: 1, stackBb: 100 });
+assert.equal(canonicalRiverDeep.policySource.type, "solved");
+
+// The band itself, pinned directly against the pure lookup (no Monte Carlo):
+// tier 20 accepts [12, 32], tier 90 accepts [54, 144]; the gate FAILS CLOSED
+// on missing/zero/garbage stacks and between/beyond the bands.
+const bandProbe = (stackBb) =>
+  lookupSolvedActions({
+    board: canonicalRiverSpot.board,
+    position: "BB",
+    toCall: 0,
+    pot: 10,
+    stackBb,
+    hero: canonicalRiverSpot.hero,
+  });
+for (const [stackBb, expectSolved] of [
+  [11.9, false],
+  [12, true],
+  [32, true],
+  [40, false], // between the tiers: neither band contains it
+  [54, true],
+  [100, true],
+  [144, true],
+  [144.2, false],
+  [0, false],
+  [NaN, false],
+  [undefined, false],
+  [-5, false],
+]) {
+  const hit = bandProbe(stackBb) !== null;
+  assert.equal(hit, expectSolved, `band probe stackBb=${stackBb} expected solved=${expectSolved}`);
+}
 
 // Fail-closed defaults: with the live-opponent count omitted (or garbage), a
 // 6-max postflop query must resolve to the multiway approximation — a caller

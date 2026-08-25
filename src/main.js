@@ -648,6 +648,9 @@ function validateLabInputs(inputs) {
   if (inputs.opponents < 1 || inputs.opponents >= inputs.tableSize) {
     return `对手人数应在 1 到 ${Math.max(1, inputs.tableSize - 1)} 之间`;
   }
+  if (!Number.isFinite(inputs.stackBb) || inputs.stackBb < 1) {
+    return "有效筹码 BB 需要是不小于 1 的数字";
+  }
   return "";
 }
 

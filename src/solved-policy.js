@@ -27,10 +27,18 @@ function boardKey(board) {
   return [...board].sort().join("");
 }
 
-// index solved spots by board for O(1) lookup
+// Index solved spots by board. Each board carries MULTIPLE depth tiers (the
+// same texture solved at different stacks behind), so the value is a list.
+// The consumer contract (per-node `stack` recorded by export_solved.py) is
+// versioned: refuse an artifact that predates it rather than guessing depths.
+const ARTIFACT_OK = String(solvedRiverArtifact?.version || "").startsWith("solved-river-v2");
 const spotIndex = new Map();
-for (const spot of solvedRiverArtifact?.spots || []) {
-  spotIndex.set(boardKey(spot.board), spot);
+if (ARTIFACT_OK) {
+  for (const spot of solvedRiverArtifact.spots || []) {
+    const key = boardKey(spot.board);
+    if (!spotIndex.has(key)) spotIndex.set(key, []);
+    spotIndex.get(key).push(spot);
+  }
 }
 
 function matchNode(spot, player, pot, toCall) {
@@ -51,39 +59,49 @@ function matchNode(spot, player, pot, toCall) {
   return bestDelta <= 0.5 ? best : null;
 }
 
-// The artifact's equilibrium is only valid near the stack depth it was solved
-// at: the betting tree caps every line at spot.stack, so at a much deeper
-// effective stack the real equilibrium has raises/jams this tree cannot
-// express, and at a much shallower one its bet/jam thresholds are wrong.
-// Reconstruct the acting player's expected remaining stack at this node from
-// the tree geometry (invested = (node.pot - spot.pot - node.toCall) / 2 in a
-// heads-up subgame) and accept only when the engine's effective stack is in
-// the same regime; outside it the SPR-conditioned distilled model is the more
-// faithful policy.
+// A depth tier's equilibrium is only valid near the stack it was solved at:
+// the betting tree caps every line at that stack, so a much deeper effective
+// stack has raises the tree cannot express and a much shallower one breaks
+// its bet/jam thresholds. Each node records the acting player's remaining
+// stack (written by export_solved.py where the tree builder guarantees it);
+// the gate FAILS CLOSED — no recorded node stack, or a missing/zero/garbage
+// effective stack from the caller, rejects the tier rather than serving one
+// depth's frequencies at an unknown depth.
 const STACK_RATIO_MIN = 0.6;
 const STACK_RATIO_MAX = 1.6;
 
-function stackMatches(spot, node, effectiveStack) {
-  if (!Number.isFinite(effectiveStack) || effectiveStack <= 0) return true; // caller opted out
-  const invested = Math.max(0, (node.pot - spot.pot - node.toCall) / 2);
-  const expected = spot.stack - invested;
-  if (expected <= 0) return true; // all-in node: nothing left to size
+function depthRatio(node, effectiveStack) {
+  if (!Number.isFinite(effectiveStack) || effectiveStack <= 0) return null;
+  const expected = Number(node.stack);
+  if (!Number.isFinite(expected) || expected <= 0) return null;
   const ratio = effectiveStack / expected;
-  return ratio >= STACK_RATIO_MIN && ratio <= STACK_RATIO_MAX;
+  return ratio >= STACK_RATIO_MIN && ratio <= STACK_RATIO_MAX ? ratio : null;
 }
 
-export function lookupSolvedActions({ board, position, toCall = 0, pot = 0, stackBb = 0, hero } = {}) {
+export function lookupSolvedActions({ board, position, toCall = 0, pot = 0, stackBb, hero } = {}) {
   if (!board || board.length !== 5 || !hero || hero.length !== 2) return null;
-  const spot = spotIndex.get(boardKey(board));
-  if (!spot) return null;
-  let player;
-  if (position === spot.posOOP) player = 0;
-  else if (position === spot.posIP) player = 1;
-  else return null;
+  const spots = spotIndex.get(boardKey(board));
+  if (!spots) return null;
 
-  const node = matchNode(spot, player, pot, toCall);
+  // Among depth tiers whose node matches this pot/toCall AND whose depth band
+  // contains the live effective stack, play the tier closest to it (ratio
+  // nearest 1). No tier in range -> null, and the distilled model takes over.
+  let node = null;
+  let bestDistance = Infinity;
+  for (const spot of spots) {
+    const player = position === spot.posOOP ? 0 : position === spot.posIP ? 1 : null;
+    if (player === null) continue;
+    const candidate = matchNode(spot, player, pot, toCall);
+    if (!candidate) continue;
+    const ratio = depthRatio(candidate, stackBb);
+    if (ratio === null) continue;
+    const distance = Math.abs(Math.log(ratio));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      node = candidate;
+    }
+  }
   if (!node) return null;
-  if (!stackMatches(spot, node, stackBb)) return null;
   const probs = node.strategy[comboKey(hero)];
   if (!probs) return null;
 

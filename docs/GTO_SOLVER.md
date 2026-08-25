@@ -16,7 +16,7 @@ Measured against exact best response, on the deployed engine:
 
 | decision | policy in the live product | exploitability (vs GTO 0%) |
 |----------|----------------------------|---------------------------:|
-| heads-up river, 5 canonical textures | exact CFR solved per combo | **~0.14% pot** |
+| heads-up river, 5 canonical textures × 2 stack depths | exact CFR solved per combo | **~0.14% pot** (short tier) / **≤0.33%** (deep tier) |
 | heads-up river, all other open/facing | distilled GTO (generalizes) | **~9% pot** (was ~29% heuristic) |
 | heads-up turn / flop | street-cascaded distilled policies | held-out / self-test validation; no global tree guarantee |
 | multiway postflop | range/equity approximation | not solved; UI labels it “多人参考” |
@@ -276,11 +276,13 @@ river spots exactly and writes `src/solved-river-artifact.js` (per-combo, per-no
 equilibrium frequencies). At runtime `src/solved-policy.js` consults it, and
 `recommendStrategy` plays the solved strategy for the hero's exact combo on any
 covered spot instead of the heuristic. A covered spot means board, position,
-pot/toCall node, **and stack depth**: the artifact's tree caps every line at the
-stack it was solved with, so the lookup rejects effective stacks far from the
-solved depth (outside ~0.6–1.6x of the node's remaining stack) and lets the
-SPR-conditioned distilled model handle those instead of serving one depth's
-frequencies as exact GTO everywhere.
+pot/toCall node, **and stack depth**: each board is solved at two depth tiers
+(20bb and 90bb behind a 10bb pot — the latter is what the app's 100bb games
+actually reach), every node records the acting player's remaining stack, and
+the lookup plays the tier whose recorded depth brackets the live effective
+stack (within 0.6–1.6x). The gate fails closed: an unknown, zero, or
+out-of-band stack falls through to the distilled model rather than serving one
+depth's frequencies as exact GTO at another.
 
 Re-running the Stage 5 measurement with the solved policy active, on the same spot
 where the heuristic was 28.7% exploitable:
@@ -294,10 +296,11 @@ So on the covered spot the product now plays within ~0.1% of pot of GTO — the 
 level as the solver's own Nash iterate. This proves the full pipeline end to end:
 solve → export to a JS artifact → engine consumes it → measured exploitability
 collapses. Coverage grows by adding spots to `export_solved.py` — it now ships
-**5 canonical river textures** (two-broadway, ace-high dry, three-flush,
-connected, double-paired), each solved to <0.32% pot, in a 705 KB artifact.
-Uncovered spots fall back to the heuristic untouched (existing tests and the
-100-hand audit are unaffected).
+**5 canonical river textures × 2 stack depths** (two-broadway, ace-high dry,
+three-flush, connected, double-paired; 20bb and 90bb behind), each solved to
+<0.34% pot, in a ~1.4 MB artifact. Uncovered spots — including covered boards
+at out-of-band depths — fall back to the distilled/heuristic stack untouched
+(existing tests and the 100-hand audit are unaffected).
 
 ```bash
 npm run export:solved      # solve canonical spots -> src/solved-river-artifact.js

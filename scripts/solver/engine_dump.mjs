@@ -59,7 +59,11 @@ for (const node of spec.nodes) {
       context,
       pot: node.pot,
       toCall: node.toCall,
-      stackBb: spec.stackBb,
+      // Per-node remaining stack (falls back to the root stack for old specs):
+      // the solved-policy depth gate compares against the node's real depth,
+      // so passing the root stack at a node where chips are already invested
+      // would sit the harness on the gate boundary instead of at ratio ~1.
+      stackBb: node.stack ?? spec.stackBb,
       // Heads-up subgame. `opponents: 1` is what keeps the engine's multiway
       // guard off (the guard keys on live opponents; tableSize never gates it).
       // `tableSize: 2` states the table format explicitly so the fail-closed

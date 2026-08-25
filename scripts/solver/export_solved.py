@@ -45,10 +45,19 @@ def solve_spot(board_text, pot, stack, bet_sizes, iterations):
         table = {}
         for i, (a, b) in enumerate(combos):
             table[combo_key(a, b)] = [round(float(x), 3) for x in strat[i]]
+        node_pot = round(float(getattr(node, "pot_ctx", pot)), 3)
+        node_to_call = round(float(getattr(node, "to_call_ctx", 0.0)), 3)
+        # Acting player's remaining stack at this node. In this heads-up tree
+        # both players start with `stack` behind and contributions since the
+        # root are symmetric around toCall, so invested = (growth - toCall)/2.
+        # Recorded HERE (where the tree builder guarantees the identity) so the
+        # runtime never has to reconstruct it from geometry assumptions.
+        invested = max(0.0, (node_pot - pot - node_to_call) / 2.0)
         nodes.append({
             "player": int(node.player),
-            "toCall": round(float(getattr(node, "to_call_ctx", 0.0)), 3),
-            "pot": round(float(getattr(node, "pot_ctx", pot)), 3),
+            "toCall": node_to_call,
+            "pot": node_pot,
+            "stack": round(stack - invested, 3),
             "actions": list(node.actions),
             "strategy": table,
         })
@@ -69,13 +78,20 @@ def main():
 
     # Canonical solved spots spanning common river textures. Extend to widen
     # exact-GTO coverage in the product.
-    specs = [
-        ("Qc Jd 9s 4h 2c", 10.0, 20.0, [0.75]),  # two-broadway, semi-wet
-        ("As Kd 7c 3h 2s", 10.0, 20.0, [0.75]),  # ace-high dry
-        ("Ah Kh Qh 5d 2c", 10.0, 20.0, [0.75]),  # three-flush board
-        ("Td 9d 8c 7h 2s", 10.0, 20.0, [0.75]),  # connected / straighty
-        ("8s 8d Kc 4h 4s", 10.0, 20.0, [0.75]),  # double-paired
+    #
+    # Each board is solved at TWO stack depths: 20bb behind (SPR 2, short) and
+    # 90bb behind (SPR 9 — what the app's 100bb games actually reach with a
+    # ~10bb river pot). The runtime lookup picks the depth tier nearest the
+    # live effective stack and rejects stacks outside its band, so one tier's
+    # equilibrium is never served at a foreign depth.
+    boards = [
+        "Qc Jd 9s 4h 2c",  # two-broadway, semi-wet
+        "As Kd 7c 3h 2s",  # ace-high dry
+        "Ah Kh Qh 5d 2c",  # three-flush board
+        "Td 9d 8c 7h 2s",  # connected / straighty
+        "8s 8d Kc 4h 4s",  # double-paired
     ]
+    specs = [(board, 10.0, stack, [0.75]) for board in boards for stack in (20.0, 90.0)]
     spots = []
     for board_text, pot, stack, bets in specs:
         spot = solve_spot(board_text, pot, stack, bets, args.iterations)
@@ -84,7 +100,7 @@ def main():
               f"{len(spot['nodes'])} nodes")
 
     artifact = {
-        "version": "solved-river-v1",
+        "version": "solved-river-v2-depths",
         "policyKind": "exact-cfr-river",
         "spots": spots,
     }
