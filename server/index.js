@@ -136,6 +136,7 @@ const table = {
   bigBlindId: null,
   acted: new Set(),
   contrib: new Map(),
+  lastRaiseSize: 1,
   actions: [],
   reviews: [],
   chat: [],
@@ -430,6 +431,7 @@ function startHand(players) {
   table.street = "preflop";
   table.pot = 0;
   table.currentBet = 0;
+  table.lastRaiseSize = BIG_BLIND;
   table.acted = new Set();
   table.contrib = new Map();
   table.actions = [];
@@ -515,21 +517,36 @@ function handlePlayerAction(player, action) {
   if (table.phase !== "playing" || table.turnId !== player.id || player.folded || player.allIn) return;
   const actionCount = table.actions.length;
   const review = buildReview(player, action);
-  applyAction(player, action);
+  let applied = applyAction(player, action);
+  if (!applied && player.type === "ai") {
+    // A bot must never stall the table: an unplayable pick degrades to the
+    // always-legal check/call.
+    applied = applyAction(player, "check-call");
+  }
+  if (!applied) {
+    // Invalid action: the turn does NOT advance. Previously an unknown action
+    // id (or a fold with nothing to call) was a silent no-op that still passed
+    // the turn on — a free pass out of paying the bet.
+    if (player.socket) send(player.socket, { type: "error", message: "无效操作：请从当前可选动作中选择" });
+    return;
+  }
   if (table.actions.length > actionCount && review) recordReview(player, review, table.actions.at(-1));
   if (table.phase === "playing") advanceTurnOrStreet(player);
   broadcast();
   queueAiIfNeeded();
 }
 
+// Apply one action. Returns true when the action was legal and executed;
+// false leaves the table untouched (caller keeps the turn on the player).
 function applyAction(player, action) {
   const id = actionId(action);
   const toCall = toCallFor(player);
-  if (id === "fold" && toCall > 0) {
+  if (id === "fold") {
+    if (toCall <= 0) return false; // nothing to fold to — check is the action
     player.folded = true;
     table.acted.add(player.id);
     recordAction(player, "fold", "弃牌", 0);
-    return;
+    return true;
   }
   if (id === "check-call") {
     if (toCall > 0) {
@@ -539,7 +556,7 @@ function applyAction(player, action) {
       recordAction(player, "check", "过牌", 0);
     }
     table.acted.add(player.id);
-    return;
+    return true;
   }
   const aggressive =
     id === "third"
@@ -555,22 +572,45 @@ function applyAction(player, action) {
               : id === "allin"
                 ? "allin"
                 : null;
-  if (aggressive) {
+  if (!aggressive) return false; // unknown action id
+
+  // Resolve the raise-to target, then enforce table stakes: minimum bet is
+  // 1bb, minimum raise is the last full raise increment on this street, and
+  // the player's stack caps everything (a short all-in below the minimum is
+  // always legal).
+  const allInTarget = round(player.streetBet + player.stack, 1);
+  let target;
+  if (id === "allin") {
+    target = allInTarget;
+  } else {
     const explicitSize = actionSize(action);
-    const size = aggressive === "allin" ? player.stack + toCall : explicitSize || Math.max(BIG_BLIND, table.pot * aggressive);
-    const target =
-      id === "allin"
-        ? player.streetBet + player.stack
-        : explicitSize && (table.street === "preflop" || toCall > 0)
-          ? Math.max(table.currentBet, explicitSize)
-          : table.currentBet + size;
-    const paid = commit(player, Math.max(0, target - player.streetBet));
-    table.currentBet = Math.max(table.currentBet, player.streetBet);
-    table.acted = new Set([player.id]);
-    const type = player.allIn ? "allin" : table.street === "preflop" || toCall > 0 ? "raise" : "bet";
-    const label = player.allIn ? "全压" : actionDisplayLabel(action, type === "raise" ? "加注" : "下注");
-    recordAction(player, type, label, paid);
+    const size = explicitSize || Math.max(BIG_BLIND, table.pot * aggressive);
+    target =
+      explicitSize && (table.street === "preflop" || toCall > 0)
+        ? explicitSize
+        : table.currentBet + size;
+    const minIncrement = table.lastRaiseSize || BIG_BLIND;
+    const minTarget = table.currentBet > 0 ? round(table.currentBet + minIncrement, 1) : BIG_BLIND;
+    target = Math.min(Math.max(target, minTarget), allInTarget);
   }
+  if (target <= table.currentBet + 1e-9 && target < allInTarget - 1e-9) return false;
+
+  const previousBet = table.currentBet;
+  const paid = commit(player, Math.max(0, round(target - player.streetBet, 1)));
+  if (paid <= 0) return false;
+  if (player.streetBet > table.currentBet + 1e-9) {
+    table.currentBet = player.streetBet;
+    table.lastRaiseSize = round(table.currentBet - previousBet, 1);
+    table.acted = new Set([player.id]); // a raise reopens the action
+  } else {
+    // All-in for less than a call (or exactly a call): acts like a call and
+    // does not reopen the betting.
+    table.acted.add(player.id);
+  }
+  const type = player.allIn ? "allin" : table.street === "preflop" || toCall > 0 ? "raise" : "bet";
+  const label = player.allIn ? "全压" : actionDisplayLabel(action, type === "raise" ? "加注" : "下注");
+  recordAction(player, type, label, paid);
+  return true;
 }
 
 function toCallFor(player) {
@@ -651,6 +691,7 @@ function nextActorAfter(playerId) {
 function advanceStreet() {
   for (const player of activePlayers()) player.streetBet = 0;
   table.currentBet = 0;
+  table.lastRaiseSize = BIG_BLIND;
   table.acted = new Set();
 
   if (table.street === "preflop") {
