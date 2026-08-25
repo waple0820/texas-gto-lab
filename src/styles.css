@@ -1771,7 +1771,7 @@ button:focus-visible {
 
 .mp-center {
   position: absolute;
-  top: 44%;
+  top: 50%;
   left: 50%;
   display: grid;
   z-index: 2;
@@ -2003,7 +2003,6 @@ button:focus-visible {
   gap: 7px;
   width: 216px;
   padding: 9px 12px;
-  overflow: hidden;
   border: 1px solid rgba(215, 168, 77, 0.28);
   border-radius: 12px;
   background:
@@ -3207,6 +3206,12 @@ button:focus-visible {
     transform: none;
   }
 
+  /* the static mobile grid flows in visual order — empty placeholders would
+     interleave with players, so they simply don't render here */
+  .mp-seat.empty {
+    display: none;
+  }
+
   .mp-seat-shell {
     gap: 5px;
     padding: 8px;
@@ -3255,7 +3260,6 @@ button:focus-visible {
     position: static;
     order: 4;
     width: 100%;
-    max-height: none;
     padding: 10px;
   }
 
@@ -3271,10 +3275,6 @@ button:focus-visible {
 
   .multi-controls {
     gap: 10px;
-  }
-
-  .mp-toolbar {
-    grid-template-columns: 1fr;
   }
 
   .sim-actions {

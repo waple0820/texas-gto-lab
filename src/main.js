@@ -1871,36 +1871,91 @@ function seatHudHtml(stats) {
   </div>`;
 }
 
+// Seat anchors clockwise around the oval: 0 top, 1 right-top, 2 right-bottom,
+// 3 bottom (hero), 4 left-bottom, 5 left-top. For each opponent count the
+// SYMMETRIC anchor subset, in clockwise order from the hero's left.
+const MP_ANCHORS_CW = [4, 5, 0, 1, 2];
+const MP_ANCHOR_SETS = {
+  0: [],
+  1: [0],
+  2: [5, 1],
+  3: [5, 0, 1],
+  4: [4, 5, 1, 2],
+  5: [4, 5, 0, 1, 2],
+};
+// Circular distance on the 6-anchor ring (for seating newcomers near their
+// ideal spread position without moving anyone else).
+function mpAnchorDistance(a, b) {
+  const diff = Math.abs(a - b) % 6;
+  return Math.min(diff, 6 - diff);
+}
+// Anchor assignments are STICKY per player id: once seated, a player never
+// changes felt position because someone else joined or left mid-session —
+// live reads (bets, dealer badge, HUD) must stay attached to a fixed spot.
+// A full symmetric re-layout happens only when the hero identity changes or
+// the map starts empty; newcomers take the free anchor closest to their
+// ideal spread slot, leavers simply free theirs.
+const mpSeatLayout = { heroId: null, anchors: new Map() };
+
 function visualSeatSlots(state) {
   const players = state?.players || [];
   const physicalSlots = Array.from({ length: 6 }, (_, index) => players[index] || null);
-  const meIndex = physicalSlots.findIndex((player) => player?.id === state?.me?.id);
-  if (meIndex < 0) return physicalSlots.map((player, index) => ({ player, physicalIndex: index }));
+  const meId = state?.me?.id ?? null;
+  const meIndex = meId === null ? -1 : physicalSlots.findIndex((player) => player?.id === meId);
+  if (meIndex < 0) {
+    mpSeatLayout.heroId = null;
+    mpSeatLayout.anchors.clear();
+    return physicalSlots.map((player, index) => ({ player, physicalIndex: index }));
+  }
 
-  // Hero is pinned to the bottom-center anchor (visual index 3). The other
-  // OCCUPIED seats are spread evenly around the oval — preserving their
-  // clockwise order relative to the hero — instead of keeping raw adjacency,
-  // which piled a 3-handed table onto one side of the felt. Anchors clockwise
-  // from the hero's left: 4 (left-bottom), 5 (left-top), 0 (top),
-  // 1 (right-top), 2 (right-bottom).
-  const anchorsCW = [4, 5, 0, 1, 2];
-  const others = [];
+  // Opponents in clockwise order starting from the hero's left.
+  const othersCW = [];
   for (let step = 1; step < physicalSlots.length; step += 1) {
     const physicalIndex = (meIndex + step) % physicalSlots.length;
-    if (physicalSlots[physicalIndex]) others.push(physicalIndex);
+    if (physicalSlots[physicalIndex]) {
+      othersCW.push({ id: physicalSlots[physicalIndex].id, physicalIndex });
+    }
   }
-  const visual = Array.from({ length: 6 }, () => null);
+
+  const liveIds = new Set(othersCW.map((other) => other.id));
+  for (const id of [...mpSeatLayout.anchors.keys()]) {
+    if (!liveIds.has(id)) mpSeatLayout.anchors.delete(id);
+  }
+
+  if (mpSeatLayout.heroId !== meId || mpSeatLayout.anchors.size === 0) {
+    mpSeatLayout.heroId = meId;
+    mpSeatLayout.anchors.clear();
+    const anchorSet = MP_ANCHOR_SETS[othersCW.length] || MP_ANCHORS_CW;
+    othersCW.forEach((other, order) => mpSeatLayout.anchors.set(other.id, anchorSet[order]));
+  } else {
+    const used = new Set(mpSeatLayout.anchors.values());
+    const free = MP_ANCHORS_CW.filter((anchor) => !used.has(anchor));
+    const anchorSet = MP_ANCHOR_SETS[othersCW.length] || MP_ANCHORS_CW;
+    othersCW.forEach((other, order) => {
+      if (mpSeatLayout.anchors.has(other.id)) return;
+      const ideal = anchorSet[Math.min(order, anchorSet.length - 1)];
+      free.sort((a, b) => mpAnchorDistance(a, ideal) - mpAnchorDistance(b, ideal));
+      mpSeatLayout.anchors.set(other.id, free.shift());
+    });
+  }
+
+  const visual = physicalSlots.map(() => null);
   visual[3] = { player: physicalSlots[meIndex], physicalIndex: meIndex };
-  others.forEach((physicalIndex, order) => {
-    const anchor = anchorsCW[Math.floor(((order + 1) * anchorsCW.length) / (others.length + 1))];
-    visual[anchor] = { player: physicalSlots[physicalIndex], physicalIndex };
-  });
-  // Remaining anchors show the unoccupied physical seats, in order.
-  const emptyPhysical = physicalSlots
-    .map((player, index) => (player ? null : index))
-    .filter((index) => index !== null);
-  for (let anchor = 0; anchor < visual.length; anchor += 1) {
-    if (!visual[anchor]) visual[anchor] = { player: null, physicalIndex: emptyPhysical.shift() ?? anchor };
+  for (const other of othersCW) {
+    visual[mpSeatLayout.anchors.get(other.id)] = {
+      player: physicalSlots[other.physicalIndex],
+      physicalIndex: other.physicalIndex,
+    };
+  }
+  // Unoccupied physical seats fill the leftover anchors, both walked in the
+  // same clockwise order so the "Seat N 空位" placards read around the ring.
+  const emptyPhysicalCW = [];
+  for (let step = 1; step < physicalSlots.length; step += 1) {
+    const physicalIndex = (meIndex + step) % physicalSlots.length;
+    if (!physicalSlots[physicalIndex]) emptyPhysicalCW.push(physicalIndex);
+  }
+  for (const anchor of MP_ANCHORS_CW) {
+    if (!visual[anchor]) visual[anchor] = { player: null, physicalIndex: emptyPhysicalCW.shift() };
   }
   return visual;
 }
