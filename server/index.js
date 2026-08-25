@@ -16,6 +16,7 @@ import {
   solveCards,
 } from "../src/poker-core.js";
 import { pickAction, recommendStrategy } from "../src/strategy-engine.js";
+import { buildPots, splitPot, uncalledRefund } from "./pots.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -671,7 +672,29 @@ function runoutAndShowdown() {
   showdown();
 }
 
+function potEntries() {
+  return activePlayers().map((player) => ({
+    id: player.id,
+    contributed: player.totalBet,
+    folded: player.folded,
+  }));
+}
+
+// Return the final bettor's uncalled excess (the part of their last bet/raise
+// nobody matched — folds or short all-ins). Mutates stack/totalBet/pot so the
+// pot that remains is exactly the contested chips.
+function applyUncalledRefund() {
+  const refund = uncalledRefund(potEntries());
+  if (!refund) return;
+  const player = getPlayer(refund.id);
+  if (!player) return;
+  player.stack = round(player.stack + refund.amount, 1);
+  player.totalBet = round(player.totalBet - refund.amount, 1);
+  table.pot = round(table.pot - refund.amount, 1);
+}
+
 function awardWithoutShowdown(winner) {
+  applyUncalledRefund();
   winner.stack = round(winner.stack + table.pot, 1);
   table.winners = [{ id: winner.id, name: winner.name, amount: table.pot, hand: "未摊牌" }];
   table.lastEvent = `${winner.name} 赢得 ${round(table.pot, 1)}bb`;
@@ -680,32 +703,50 @@ function awardWithoutShowdown(winner) {
 
 function showdown() {
   while (table.board.length < 5) table.board.push(table.deck.pop());
+  applyUncalledRefund();
   const contenders = activePlayers().filter((player) => !player.folded);
   const solved = contenders.map((player) => ({
     player,
     solved: solveCards([...player.hole, ...table.board]),
   }));
-  const winners = compareSolvedHands(solved.map((item) => item.solved));
-  const winnerRows = solved.filter((item) => winners.includes(item.solved));
-  const share = table.pot / winnerRows.length;
-  for (const row of winnerRows) row.player.stack = round(row.player.stack + share, 1);
+  const solvedById = new Map(solved.map((item) => [item.player.id, item]));
+
+  // Layered side pots: each pot is contested only by players whose full-hand
+  // contribution covers that layer, so a short all-in can never win more than
+  // their entitlement and deep stacks contest the overflow among themselves.
+  const pots = buildPots(potEntries());
+  const wonById = new Map();
+  for (const pot of pots) {
+    const rows = pot.eligible.map((id) => solvedById.get(id)).filter(Boolean);
+    if (!rows.length) continue;
+    const best = compareSolvedHands(rows.map((item) => item.solved));
+    const potWinners = rows.filter((item) => best.includes(item.solved));
+    for (const share of splitPot(pot.amount, potWinners.map((item) => item.player.id))) {
+      wonById.set(share.id, round((wonById.get(share.id) || 0) + share.amount, 1));
+    }
+  }
+
+  const winnerRows = solved.filter((item) => (wonById.get(item.player.id) || 0) > 0);
+  for (const row of winnerRows) {
+    row.player.stack = round(row.player.stack + wonById.get(row.player.id), 1);
+  }
   table.winners = winnerRows.map((row) => ({
     id: row.player.id,
     name: row.player.name,
-    amount: round(share, 1),
+    amount: wonById.get(row.player.id),
     hand: row.solved.descr,
   }));
   // Per-contender showdown detail so the UI can show every revealed hand's rank
   // and who won how much — not just names + cards.
-  const winnerIds = new Set(winnerRows.map((row) => row.player.id));
   table.showdownHands = solved.map((item) => ({
     id: item.player.id,
     hand: item.solved.descr,
     rank: item.solved.name,
-    won: winnerIds.has(item.player.id),
-    amount: winnerIds.has(item.player.id) ? round(share, 1) : 0,
+    won: (wonById.get(item.player.id) || 0) > 0,
+    amount: wonById.get(item.player.id) || 0,
   }));
-  table.lastEvent = `${table.winners.map((winner) => winner.name).join(" / ")} 摊牌获胜`;
+  const sidePotNote = pots.length > 1 ? `（${pots.length} 个池）` : "";
+  table.lastEvent = `${table.winners.map((winner) => winner.name).join(" / ")} 摊牌获胜${sidePotNote}`;
   endHand();
 }
 
