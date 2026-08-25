@@ -13,6 +13,8 @@
   --green: #2e9068;
   --green-2: #43c28c;
   --gold: #e2c184;
+  --gold-rgb: 226, 193, 132;
+  --green-rgb: 67, 194, 140;
   --amber: #dfb25f;
   --red: #d35f5f;
   --blue: #6b9fd4;
@@ -25,7 +27,7 @@
   --radius-sm: 7px;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 14px 40px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
-  --shadow-glow: 0 0 0 1px rgba(67, 194, 140, 0.16), 0 10px 32px rgba(9, 42, 29, 0.55);
+  --shadow-glow: 0 0 0 1px rgba(var(--green-rgb), 0.16), 0 10px 32px rgba(9, 42, 29, 0.55);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -43,8 +45,8 @@ body,
 
 body {
   background:
-    radial-gradient(1400px 560px at 18% -12%, rgba(67, 194, 140, 0.07), transparent 65%),
-    radial-gradient(1100px 480px at 88% -14%, rgba(226, 193, 132, 0.045), transparent 62%),
+    radial-gradient(1400px 560px at 18% -12%, rgba(var(--green-rgb), 0.07), transparent 65%),
+    radial-gradient(1100px 480px at 88% -14%, rgba(var(--gold-rgb), 0.045), transparent 62%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 340px),
     var(--bg);
   color: var(--text);
@@ -260,12 +262,10 @@ main {
 }
 
 .icon-button:hover,
-.deck-card:hover,
 .card-slot:hover,
-.range-cell:hover,
 .sim-actions button:hover,
 .primary-action:hover {
-  border-color: rgba(69, 192, 139, 0.55);
+  border-color: rgba(var(--green-rgb), 0.55);
   transform: translateY(-1px);
   filter: brightness(1.08);
 }
@@ -352,14 +352,26 @@ main {
   color: #e58a80;
 }
 
-.deck-card:hover {
-  background: linear-gradient(180deg, rgba(67, 194, 140, 0.14), transparent), #17201b;
+.deck-card:hover:not(:disabled) {
+  border-color: rgba(var(--green-rgb), 0.55);
+  background: linear-gradient(180deg, rgba(var(--green-rgb), 0.14), transparent), #17201b;
+  transform: translateY(-1px);
+  filter: brightness(1.08);
 }
 
+/* picked (in use): clearly marked but still legible when scanning the wall */
 .deck-card:disabled {
   cursor: not-allowed;
-  opacity: 0.22;
+  opacity: 0.5;
   transform: none;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-style: dashed;
+  background: #0c100e;
+  color: #5f6b64;
+}
+
+.deck-card.red:disabled {
+  color: #7d5a56;
 }
 
 .form-grid {
@@ -402,7 +414,7 @@ button:focus-visible {
   width: 100%;
   min-height: 44px;
   margin-top: 14px;
-  border-color: rgba(67, 194, 140, 0.55);
+  border-color: rgba(var(--green-rgb), 0.55);
   background: linear-gradient(180deg, #3cba85, #2b8a61);
   color: #f4fdf8;
   font-weight: 850;
@@ -456,7 +468,7 @@ button:focus-visible {
   letter-spacing: 0.02em;
   border: 1px dashed rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
-  background: radial-gradient(60% 80% at 50% 30%, rgba(67, 194, 140, 0.03), transparent 70%);
+  background: radial-gradient(60% 80% at 50% 30%, rgba(var(--green-rgb), 0.03), transparent 70%);
 }
 
 .mix-row {
@@ -494,7 +506,7 @@ button:focus-visible {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #2f9c70, #4fd39a);
-  box-shadow: 0 0 8px rgba(67, 194, 140, 0.35);
+  box-shadow: 0 0 8px rgba(var(--green-rgb), 0.35);
 }
 
 .mix-row.danger .mix-bar span {
@@ -514,8 +526,8 @@ button:focus-visible {
 
 /* Emphasize the most-frequent (primary GTO) action. */
 .action-mix .mix-row:first-child {
-  border-color: rgba(226, 193, 132, 0.38);
-  background: linear-gradient(180deg, rgba(226, 193, 132, 0.06), transparent), var(--surface-2);
+  border-color: rgba(var(--gold-rgb), 0.38);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.06), transparent), var(--surface-2);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .action-mix .mix-row:first-child .mix-label strong::before {
@@ -782,7 +794,6 @@ button:focus-visible {
 
 .range-cell:hover {
   border-color: rgba(120, 226, 178, 0.6);
-  transform: none;
   filter: brightness(1.12);
 }
 
@@ -802,11 +813,11 @@ button:focus-visible {
   gap: 7px;
   min-height: 92px;
   padding: 16px;
-  border: 1px solid rgba(67, 194, 140, 0.22);
+  border: 1px solid rgba(var(--green-rgb), 0.22);
   border-radius: 12px;
   background:
-    radial-gradient(120% 140% at 0% 0%, rgba(67, 194, 140, 0.16), transparent 55%),
-    radial-gradient(120% 140% at 100% 0%, rgba(226, 193, 132, 0.06), transparent 55%),
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--green-rgb), 0.16), transparent 55%),
+    radial-gradient(120% 140% at 100% 0%, rgba(var(--gold-rgb), 0.06), transparent 55%),
     #0f1512;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
@@ -868,7 +879,7 @@ button:focus-visible {
 }
 
 .practice-actions button:hover {
-  border-color: rgba(67, 194, 140, 0.6);
+  border-color: rgba(var(--green-rgb), 0.6);
   transform: translateY(-2px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 8px 20px rgba(0, 0, 0, 0.3);
 }
@@ -1012,14 +1023,14 @@ button:focus-visible {
   position: absolute;
   inset: auto 0 0;
   height: calc(var(--weight) * 100%);
-  background: linear-gradient(180deg, rgba(120, 226, 178, 0.1), rgba(67, 194, 140, 0.05));
+  background: linear-gradient(180deg, rgba(120, 226, 178, 0.1), rgba(var(--green-rgb), 0.05));
   pointer-events: none;
 }
 
 /* Hand-class accents (classic poker grid): gold diagonal pairs, blue suited,
    slate offsuit — visible at any weight so the matrix structure always reads. */
 .range-cell.cell-pair {
-  box-shadow: inset 2px 0 0 rgba(226, 193, 132, 0.8);
+  box-shadow: inset 2px 0 0 rgba(var(--gold-rgb), 0.8);
 }
 .range-cell.cell-suited {
   box-shadow: inset 2px 0 0 rgba(107, 159, 212, 0.65);
@@ -1123,7 +1134,7 @@ button:focus-visible {
     radial-gradient(ellipse at center, rgba(22, 78, 57, 0.94), rgba(11, 40, 29, 0.97)),
     var(--felt);
   box-shadow:
-    inset 0 0 0 2px rgba(226, 193, 132, 0.22),
+    inset 0 0 0 2px rgba(var(--gold-rgb), 0.22),
     inset 0 0 0 11px rgba(0, 0, 0, 0.3),
     inset 0 0 110px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(0, 0, 0, 0.5),
@@ -1785,9 +1796,9 @@ button:focus-visible {
 .mp-center .pot {
   padding: 4px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(226, 193, 132, 0.4);
+  border: 1px solid rgba(var(--gold-rgb), 0.4);
   background:
-    linear-gradient(180deg, rgba(226, 193, 132, 0.16), rgba(226, 193, 132, 0.05));
+    linear-gradient(180deg, rgba(var(--gold-rgb), 0.16), rgba(var(--gold-rgb), 0.05));
   color: #f2dca6;
   font-size: 17px;
   font-weight: 900;
@@ -2470,16 +2481,16 @@ button:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 3px 0 0 rgba(201, 80, 80, 0.55);
 }
 .sim-actions button.act-call {
-  border-color: rgba(67, 194, 140, 0.4);
-  background: linear-gradient(180deg, rgba(67, 194, 140, 0.09), transparent), #111a15;
+  border-color: rgba(var(--green-rgb), 0.4);
+  background: linear-gradient(180deg, rgba(var(--green-rgb), 0.09), transparent), #111a15;
   color: #a3e8c7;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 3px 0 0 rgba(67, 194, 140, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 3px 0 0 rgba(var(--green-rgb), 0.55);
 }
 .sim-actions button.act-bet {
-  border-color: rgba(226, 193, 132, 0.38);
-  background: linear-gradient(180deg, rgba(226, 193, 132, 0.08), transparent), #17130d;
+  border-color: rgba(var(--gold-rgb), 0.38);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.08), transparent), #17130d;
   color: #ecd4a4;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 3px 0 0 rgba(226, 193, 132, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 3px 0 0 rgba(var(--gold-rgb), 0.5);
 }
 .sim-actions button.act-allin {
   border-color: rgba(201, 80, 80, 0.55);
@@ -3361,16 +3372,17 @@ button:focus-visible {
 }
 
 
-/* Lab output goes stale when inputs fail validation: dim the previous spot's
-   numbers so a warning never sits beside fresh-looking results. */
-.output-panel.is-stale .advice-hero,
-.output-panel.is-stale .action-mix,
-.output-panel.is-stale .metric-grid,
-.output-panel.is-stale .sizing-tree,
-.output-panel.is-stale .tag-row,
-.output-panel.is-stale .distribution,
-.output-panel.is-stale .policy-source-row {
+/* Lab output goes stale when the inputs move on without a recalculation: dim
+   the previous spot's numbers so a warning (or a different hand) never sits
+   beside fresh-looking results. Structural selector — every present and
+   future result block dims, only the panel head (title/status) stays. */
+.output-panel > :not(.panel-head),
+.output-panel #sample-count {
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.output-panel.is-stale > :not(.panel-head),
+.output-panel.is-stale #sample-count {
   opacity: 0.32;
   filter: saturate(0.45);
-  transition: opacity 0.25s ease, filter 0.25s ease;
 }

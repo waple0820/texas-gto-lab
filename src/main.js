@@ -604,6 +604,8 @@ function renderRangeMatrix() {
 }
 
 function renderLab() {
+  // any card/board mutation invalidates the rendered recommendation
+  markResultsStale(true);
   renderSlots();
   renderDeck();
   renderTargetTabs();
@@ -654,10 +656,13 @@ function validateLabInputs(inputs) {
   return "";
 }
 
-// Dim the previous spot's numbers whenever validation fails, so a warning is
-// never displayed next to fresh-looking (but stale) results.
+// Dim the previous spot's numbers whenever the inputs move on without a new
+// calculation, so a warning (or a different hand) never sits next to
+// fresh-looking stale results. No-op until a result has actually rendered —
+// the first-run placeholder must stay readable.
+let labHasResult = false;
 function markResultsStale(stale) {
-  document.querySelector(".output-panel")?.classList.toggle("is-stale", stale);
+  $(".output-panel")?.classList.toggle("is-stale", stale && labHasResult);
 }
 
 async function runCalculation() {
@@ -726,6 +731,7 @@ function renderPolicySource(policySource) {
 }
 
 function renderRecommendation(result) {
+  labHasResult = true;
   $("#sample-count").textContent = `${result.equity.iterations} samples`;
   renderPolicySource(result.policySource);
   // hero callout — the GTO-preferred action, consistent with the battle decision station
@@ -2613,6 +2619,9 @@ function wireEvents() {
   });
 
   $("#run-calc").addEventListener("click", runCalculation);
+  // any parameter tweak invalidates the rendered recommendation too
+  document.querySelector(".controls-panel")?.addEventListener("input", () => markResultsStale(true));
+  document.querySelector(".controls-panel")?.addEventListener("change", () => markResultsStale(true));
   $("#random-scenario").addEventListener("click", randomScenario);
   $("#reset-cards").addEventListener("click", resetCards);
   $("#practice-next").addEventListener("click", generatePracticeQuestion);

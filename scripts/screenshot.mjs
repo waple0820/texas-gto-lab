@@ -25,11 +25,12 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, deviceScaleFactor: 1.5 });
   page.setDefaultTimeout(8000);
+  // Suppress the first-visit welcome overlay deterministically (the app gates
+  // it on this key) — a timed click races slow loads and can silently
+  // screenshot the overlay instead of the UI under test.
+  await page.addInitScript(() => localStorage.setItem("tgl-welcomed", "1"));
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1300);
-  // First-visit welcome overlay intercepts all clicks — dismiss it.
-  await page.click("#welcome-skip", { timeout: 1500 }).catch(() => {});
-  await page.waitForTimeout(300);
   if (view !== "lab") {
     await page.click(`[data-tab="${view}"]`);
     await page.waitForTimeout(400);
